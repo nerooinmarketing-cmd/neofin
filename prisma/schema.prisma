@@ -1,0 +1,966 @@
+// POSKontrol veri modeli.
+// Kurallar: tüm para alanları Decimal, tüm tablolar (kimlik/onay tabloları
+// hariç) company_id ile tenant bazlı ayrılır, tarife sürümleri asla silinmez
+// (yalnızca supersede edilir — bu yüzden TariffVersion'da deletedAt yoktur).
+
+generator client {
+  provider     = "prisma-client"
+  output       = "../src/generated/prisma"
+  moduleFormat = "cjs"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ---------------------------------------------------------------------------
+// Kimlik / tenant
+// ---------------------------------------------------------------------------
+
+enum CompanyStatus {
+  ACTIVE
+  INACTIVE
+  TRIAL
+}
+
+enum PackageTier {
+  BASIC
+  PRO
+  ENTERPRISE
+}
+
+enum SupportStatus {
+  NONE // Açık destek talebi yok
+  OPEN // Destek talebi var
+  RESOLVED // Son talep çözüldü
+}
+
+model Company {
+  id                    String        @id @default(cuid())
+  // Yönetici eşleştirme sırasında yalnızca ad + telefon girer (bkz. UX §4.3);
+  // geri kalan alanlar Aşama 4 kurulum sihirbazının 1. adımında doldurulur —
+  // bu yüzden nullable'dır.
+  name                  String?
+  shortName             String?
+  taxNumber             String?       @unique
+  contactName           String?
+  phone                 String
+  email                 String?
+  city                  String?
+  district              String?
+  sector                String?
+  estimatedAnnualVolume Decimal?      @db.Decimal(14, 2)
+  branchCount           Int           @default(1)
+  status                CompanyStatus @default(TRIAL)
+  onboardingCompletedAt DateTime?
+  onboardingStep        Int           @default(1) // 1..5, bkz. Aşama 4 kurulum sihirbazı
+  onboardingDraft       Json? // mevcut adımın henüz kaydedilmemiş form verisi (otomatik taslak)
+  /// Aşama 15 (Yönetici Paneli) — paket ve abonelik yönetimi.
+  packageTier           PackageTier   @default(BASIC)
+  trialEndsAt           DateTime?
+  supportStatus         SupportStatus @default(NONE)
+  createdAt             DateTime      @default(now())
+  updatedAt             DateTime      @updatedAt
+  deletedAt             DateTime?
+
+  companyUsers       CompanyUser[]
+  telegramAccounts   TelegramAccount[]
+  loginApprovals     LoginApproval[]
+  sessions           Session[]
+  branches           Branch[]
+  banks              Bank[]
+  posDevices         PosDevice[]
+  tariffVersions     TariffVersion[]
+  dailySales         DailySale[]
+  expectedPayments   ExpectedPayment[]
+  actualPayments     ActualPayment[]
+  paymentDifferences PaymentDifference[]
+  contracts          Contract[]
+  reports            Report[]
+  notifications      Notification[]
+  auditLogs          AuditLog[]
+  supportNotes       SupportNote[]
+  telegramPairingCodes TelegramPairingCode[]
+
+  @@index([status])
+}
+
+enum CompanyUserRole {
+  OWNER // İşletme sahibi
+  MANAGER // Firma yöneticisi
+  ACCOUNTANT // Muhasebe personeli
+}
+
+model CompanyUser {
+  id          String          @id @default(cuid())
+  companyId   String
+  company     Company         @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  name        String
+  email       String?
+  phone       String?
+  role        CompanyUserRole
+  isActive    Boolean         @default(true)
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+  deletedAt   DateTime?
+  createdById String?
+
+  telegramAccounts       TelegramAccount[]
+  sessions               Session[]
+  notificationPreference NotificationPreference?
+  telegramPairingCodes   TelegramPairingCode[]
+
+  @@unique([companyId, email])
+  @@index([companyId])
+}
+
+model TelegramAccount {
+  id             String       @id @default(cuid())
+  telegramUserId BigInt       @unique
+  firstName      String?
+  lastName       String?
+  username       String?
+  companyId      String?
+  company        Company?     @relation(fields: [companyId], references: [id], onDelete: SetNull)
+  companyUserId  String?
+  companyUser    CompanyUser? @relation(fields: [companyUserId], references: [id], onDelete: SetNull)
+  linkedAt       DateTime?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  loginApprovals    LoginApproval[]
+  conversationState TelegramConversationState?
+
+  @@index([companyId])
+}
+
+/// Sistem yöneticisinin bir firma kullanıcısı için oluşturduğu tek kullanımlık
+/// Telegram eşleştirme kodu (bkz. Aşama 15: "Telegram eşleştirme kodu
+/// oluştur/yenile"). `LoginApproval`dan farklıdır — burada onay/red akışı
+/// yoktur, yalnızca "bu Telegram hesabını şu CompanyUser'a bağla" işlemi.
+model TelegramPairingCode {
+  id            String      @id @default(cuid())
+  token         String      @unique
+  companyId     String
+  company       Company     @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  companyUserId String
+  companyUser   CompanyUser @relation(fields: [companyUserId], references: [id], onDelete: Cascade)
+  usedAt        DateTime?
+  expiresAt     DateTime
+  createdAt     DateTime    @default(now())
+
+  @@index([companyId])
+}
+
+/// Telegram'dan çok adımlı sohbet akışları (ör. `/gunsonu`) için durum
+/// makinesi — webhook her istekte state'siz çalıştığından adımlar ve o ana
+/// kadar girilen veriler burada tutulur.
+model TelegramConversationState {
+  id                String          @id @default(cuid())
+  telegramAccountId String          @unique
+  telegramAccount   TelegramAccount @relation(fields: [telegramAccountId], references: [id], onDelete: Cascade)
+  flow              String
+  step              String
+  data              Json
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+}
+
+enum LoginApprovalStatus {
+  PENDING
+  APPROVED
+  DENIED
+  EXPIRED
+  NOT_LINKED // Telegram hesabı hiçbir firma kullanıcısıyla eşleşmiyor
+}
+
+/// Telegram zorunlu giriş akışındaki tek kullanımlık onay isteği.
+/// Kritik işlemler (tarife silme, kullanıcı ekleme) de aynı altyapıyı kullanır.
+/// `telegramAccountId` istek oluşturulduğunda henüz bilinmez — kullanıcı
+/// Telegram botunda /start'a bastığında doldurulur.
+model LoginApproval {
+  id                String              @id @default(cuid())
+  token             String              @unique
+  telegramAccountId String?
+  telegramAccount   TelegramAccount?    @relation(fields: [telegramAccountId], references: [id], onDelete: SetNull)
+  companyId         String?
+  company           Company?            @relation(fields: [companyId], references: [id], onDelete: SetNull)
+  purpose           String              @default("LOGIN") // LOGIN | TARIFF_DELETE | USER_ADD | ...
+  deviceInfo        String?
+  ipAddress         String?
+  status            LoginApprovalStatus @default(PENDING)
+  requestedAt       DateTime            @default(now())
+  respondedAt       DateTime?
+  expiresAt         DateTime
+  createdAt         DateTime            @default(now())
+
+  session Session?
+
+  @@index([companyId])
+  @@index([status, expiresAt])
+}
+
+/// Onaylanmış bir Telegram girişinden (veya yerel geliştirme dev-login
+/// yolundan) doğan tarayıcı oturumu. `tokenHash` saklanır, ham token yalnızca
+/// httpOnly cookie içinde tutulur — veritabanında asla düz metin token olmaz.
+model Session {
+  id                        String         @id @default(cuid())
+  companyId                 String
+  company                   Company        @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  companyUserId             String
+  companyUser               CompanyUser    @relation(fields: [companyUserId], references: [id], onDelete: Cascade)
+  tokenHash                 String         @unique
+  createdViaLoginApprovalId String?        @unique
+  createdViaLoginApproval   LoginApproval? @relation(fields: [createdViaLoginApprovalId], references: [id], onDelete: SetNull)
+  isDevSession              Boolean        @default(false)
+  deviceInfo                String?
+  ipAddress                 String?
+  createdAt                 DateTime       @default(now())
+  lastSeenAt                DateTime       @default(now())
+  expiresAt                 DateTime
+  revokedAt                 DateTime?
+
+  @@index([companyId])
+  @@index([companyUserId])
+}
+
+// ---------------------------------------------------------------------------
+// Aşama 15 — Yönetici Paneli (sistem yöneticisi, firmalardan bağımsız)
+// ---------------------------------------------------------------------------
+
+/// Platform çalışanı (sistem yöneticisi) — herhangi bir firmaya bağlı
+/// değildir, ayrı e-posta/şifre girişi kullanır (bkz. `/admin/login`).
+/// "Admin paneli normal kullanıcı panelinden route ve yetki olarak ayrı
+/// olsun" kuralı burada uygulanır — CompanyUser/Telegram oturumundan
+/// tamamen bağımsız bir kimlik doğrulama.
+model SystemAdmin {
+  id           String    @id @default(cuid())
+  email        String    @unique
+  passwordHash String
+  name         String
+  isActive     Boolean   @default(true)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  sessions     SystemAdminSession[]
+  supportNotes SupportNote[]
+}
+
+model SystemAdminSession {
+  id            String      @id @default(cuid())
+  systemAdminId String
+  systemAdmin   SystemAdmin @relation(fields: [systemAdminId], references: [id], onDelete: Cascade)
+  tokenHash     String      @unique
+  createdAt     DateTime    @default(now())
+  expiresAt     DateTime
+  revokedAt     DateTime?
+
+  @@index([systemAdminId])
+}
+
+/// "Destek notları" — sistem yöneticisinin bir firma için bıraktığı serbest metin not.
+model SupportNote {
+  id            String       @id @default(cuid())
+  companyId     String
+  company       Company      @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  systemAdminId String?
+  systemAdmin   SystemAdmin? @relation(fields: [systemAdminId], references: [id], onDelete: SetNull)
+  note          String
+  createdAt     DateTime     @default(now())
+
+  @@index([companyId])
+}
+
+model Branch {
+  id          String    @id @default(cuid())
+  companyId   String
+  company     Company   @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  name        String
+  city        String?
+  district    String?
+  isActive    Boolean   @default(true)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+  createdById String?
+
+  posDevices       PosDevice[]
+  dailySales       DailySale[]
+  expectedPayments ExpectedPayment[]
+
+  @@index([companyId])
+}
+
+// ---------------------------------------------------------------------------
+// Banka / POS
+// ---------------------------------------------------------------------------
+
+model Bank {
+  id             String    @id @default(cuid())
+  companyId      String
+  company        Company   @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  name           String
+  branchName     String?
+  customerNumber String?
+  note           String?
+  isActive       Boolean   @default(true)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  deletedAt      DateTime?
+  createdById    String?
+
+  contacts         BankContact[]
+  posDevices       PosDevice[]
+  tariffVersions   TariffVersion[]
+  dailySales       DailySale[]
+  expectedPayments ExpectedPayment[]
+  contracts        Contract[]
+
+  @@index([companyId])
+}
+
+model BankContact {
+  id          String    @id @default(cuid())
+  bankId      String
+  bank        Bank      @relation(fields: [bankId], references: [id], onDelete: Cascade)
+  name        String
+  phone       String?
+  email       String?
+  note        String?
+  isPrimary   Boolean   @default(false)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+  createdById String?
+
+  @@index([bankId])
+}
+
+enum PosType {
+  PHYSICAL
+  VIRTUAL
+  MOBILE
+  QR
+}
+
+model PosDevice {
+  id          String    @id @default(cuid())
+  companyId   String
+  company     Company   @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  branchId    String
+  branch      Branch    @relation(fields: [branchId], references: [id], onDelete: Restrict)
+  bankId      String
+  bank        Bank      @relation(fields: [bankId], references: [id], onDelete: Restrict)
+  name        String
+  terminalNo  String
+  merchantNo  String
+  type        PosType   @default(PHYSICAL)
+  isActive    Boolean   @default(true)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+  createdById String?
+
+  tariffVersions   TariffVersion[]
+  dailySales       DailySale[]
+  expectedPayments ExpectedPayment[]
+  contracts        Contract[]
+
+  @@unique([companyId, terminalNo])
+  @@index([companyId])
+  @@index([bankId])
+}
+
+// ---------------------------------------------------------------------------
+// Resmî tarife (sürümlenir, asla silinmez)
+// ---------------------------------------------------------------------------
+
+enum TariffStatus {
+  ACTIVE
+  SUPERSEDED
+}
+
+/// Bir POS için zaman içinde birden çok sürüm oluşur (v1, v2, v3 ...).
+/// İşlem tarihine göre aktif sürüm startDate/endDate aralığından bulunur.
+/// Bu tablo için deletedAt yoktur — tarife sürümleri kalıcıdır.
+model TariffVersion {
+  id              String         @id @default(cuid())
+  companyId       String
+  company         Company        @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  posId           String
+  pos             PosDevice      @relation(fields: [posId], references: [id], onDelete: Restrict)
+  bankId          String
+  bank            Bank           @relation(fields: [bankId], references: [id], onDelete: Restrict)
+  versionNumber   Int
+  campaignName    String?
+  startDate       DateTime
+  endDate         DateTime?
+  status          TariffStatus   @default(ACTIVE)
+  supersededById  String?        @unique
+  supersededBy    TariffVersion? @relation("TariffSupersession", fields: [supersededById], references: [id], onDelete: SetNull)
+  previousVersion TariffVersion? @relation("TariffSupersession")
+  bankOfficerName String?
+  documentDate    DateTime?
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+  createdById     String?
+
+  singlePaymentRates TariffSinglePaymentRate?
+  installmentRates   TariffInstallmentRate[]
+  transactionSupport TariffTransactionSupport?
+  fees               TariffFee[]
+  paymentTerms       TariffPaymentTerms?
+  commitments        TariffCommitment?
+  documents          TariffDocument[]
+  dailySales         DailySale[]
+  expectedPayments   ExpectedPayment[]
+  paymentDifferences PaymentDifference[]
+
+  @@unique([posId, versionNumber])
+  @@index([companyId])
+  @@index([posId, startDate, endDate])
+}
+
+/// Bölüm 4 — Kart ve işlem türleri: bu tarifede hangi kart/işlem
+/// türlerinin kabul edildiği (bkz. UX §9 Bölüm 4).
+model TariffTransactionSupport {
+  id              String        @id @default(cuid())
+  tariffVersionId String        @unique
+  tariffVersion   TariffVersion @relation(fields: [tariffVersionId], references: [id], onDelete: Cascade)
+  ownBankCard     Boolean       @default(true) // Bankanın kendi kartı
+  otherBankCard   Boolean       @default(true) // Diğer banka kartı
+  commercialCard  Boolean       @default(false) // Ticari kart
+  foreignCard     Boolean       @default(false) // Yurt dışı kart
+  loyaltyPoints   Boolean       @default(false) // Puan kullanımı
+  refund          Boolean       @default(true) // İade işlemi
+  cancellation    Boolean       @default(true) // İptal işlemi
+  mailOrder       Boolean       @default(false) // Mail order
+  contactless     Boolean       @default(true) // Temassız
+  qr              Boolean       @default(false) // QR
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+}
+
+/// Bölüm 6 — Valör ve ödeme (bkz. UX §9 Bölüm 6).
+model TariffPaymentTerms {
+  id                    String        @id @default(cuid())
+  tariffVersionId       String        @unique
+  tariffVersion         TariffVersion @relation(fields: [tariffVersionId], references: [id], onDelete: Cascade)
+  paymentDay            String? // Ödeme günü kuralı
+  holidayPaymentRule    String? // Tatil günlerinde ödeme kuralı
+  weekendPaymentDay     String? // Hafta sonu işlemlerinin ödeme günü
+  partialPaymentRule    String? // Parçalı ödeme kuralı
+  blockDurationDays     Int? // Bloke süresi
+  blockReleaseCondition String? // Bloke çözüm koşulu
+  createdAt             DateTime      @default(now())
+  updatedAt             DateTime      @updatedAt
+}
+
+model TariffSinglePaymentRate {
+  id                   String        @id @default(cuid())
+  tariffVersionId      String        @unique
+  tariffVersion        TariffVersion @relation(fields: [tariffVersionId], references: [id], onDelete: Cascade)
+  nextDayRate          Decimal       @db.Decimal(6, 3)
+  valor2DayRate        Decimal?      @db.Decimal(6, 3)
+  valor7DayRate        Decimal?      @db.Decimal(6, 3)
+  blockedConditionNote String?
+  foreignCardRate      Decimal?      @db.Decimal(6, 3)
+  commercialCardRate   Decimal?      @db.Decimal(6, 3)
+  createdAt            DateTime      @default(now())
+  updatedAt            DateTime      @updatedAt
+}
+
+model TariffInstallmentRate {
+  id               String        @id @default(cuid())
+  tariffVersionId  String
+  tariffVersion    TariffVersion @relation(fields: [tariffVersionId], references: [id], onDelete: Cascade)
+  installmentCount Int // 2..12
+  commissionRate   Decimal       @db.Decimal(6, 3)
+  valorDays        Int
+  fixedFee         Decimal?      @db.Decimal(14, 2)
+  campaignName     String?
+  validUntil       DateTime?
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+
+  @@unique([tariffVersionId, installmentCount])
+}
+
+enum TariffFeeType {
+  MONTHLY_POS
+  DEVICE_MAINTENANCE
+  SIM_LINE
+  STATEMENT
+  SOFTWARE
+  INACTIVITY
+  MIN_VOLUME_PENALTY
+  EARLY_TERMINATION
+  OTHER
+}
+
+model TariffFee {
+  id              String        @id @default(cuid())
+  tariffVersionId String
+  tariffVersion   TariffVersion @relation(fields: [tariffVersionId], references: [id], onDelete: Cascade)
+  feeType         TariffFeeType
+  amount          Decimal       @db.Decimal(14, 2)
+  note            String?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  @@index([tariffVersionId])
+}
+
+model TariffCommitment {
+  id                      String        @id @default(cuid())
+  tariffVersionId         String        @unique
+  tariffVersion           TariffVersion @relation(fields: [tariffVersionId], references: [id], onDelete: Cascade)
+  monthlyVolumeCommitment Decimal?      @db.Decimal(14, 2)
+  annualVolumeCommitment  Decimal?      @db.Decimal(14, 2)
+  productUsageCommitment  String?
+  salaryAgreementLink     Boolean       @default(false)
+  creditLink              Boolean       @default(false)
+  autoPaymentInstruction  Boolean       @default(false)
+  breachPenalty           Decimal?      @db.Decimal(14, 2)
+  createdAt               DateTime      @default(now())
+  updatedAt               DateTime      @updatedAt
+}
+
+enum DocumentFileType {
+  PDF
+  IMAGE
+}
+
+model TariffDocument {
+  id              String           @id @default(cuid())
+  tariffVersionId String
+  tariffVersion   TariffVersion    @relation(fields: [tariffVersionId], references: [id], onDelete: Cascade)
+  fileUrl         String
+  fileType        DocumentFileType
+  hasStamp        Boolean          @default(false)
+  hasSignature    Boolean          @default(false)
+  verifiedByUser  Boolean          @default(false)
+  note            String?
+  createdAt       DateTime         @default(now())
+  createdById     String?
+
+  @@index([tariffVersionId])
+}
+
+// ---------------------------------------------------------------------------
+// Gün sonu satışları
+// ---------------------------------------------------------------------------
+
+enum SourceType {
+  USER_INPUT
+  BANK_DOCUMENT
+  AI_EXTRACTED
+  MANUAL_EDIT
+}
+
+enum VerificationStatus {
+  UNVERIFIED
+  USER_VERIFIED
+  BANK_VERIFIED
+}
+
+model DailySale {
+  id                 String             @id @default(cuid())
+  companyId          String
+  company            Company            @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  branchId           String
+  branch             Branch             @relation(fields: [branchId], references: [id], onDelete: Restrict)
+  bankId             String
+  bank               Bank               @relation(fields: [bankId], references: [id], onDelete: Restrict)
+  posId              String
+  pos                PosDevice          @relation(fields: [posId], references: [id], onDelete: Restrict)
+  tariffVersionId    String
+  tariffVersion      TariffVersion      @relation(fields: [tariffVersionId], references: [id], onDelete: Restrict)
+  saleDate           DateTime           @db.Date
+  sourceType         SourceType         @default(USER_INPUT)
+  verificationStatus VerificationStatus @default(UNVERIFIED)
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+  deletedAt          DateTime?
+  createdById        String?
+
+  items            DailySaleItem[]
+  expectedPayments ExpectedPayment[]
+
+  @@index([companyId])
+  @@index([posId, saleDate])
+}
+
+enum SaleTransactionType {
+  SINGLE
+  INSTALLMENT
+  FOREIGN_CARD
+  COMMERCIAL_CARD
+  REFUND
+  CANCEL
+}
+
+model DailySaleItem {
+  id               String              @id @default(cuid())
+  dailySaleId      String
+  dailySale        DailySale           @relation(fields: [dailySaleId], references: [id], onDelete: Cascade)
+  transactionType  SaleTransactionType
+  installmentCount Int? // yalnızca transactionType = INSTALLMENT için 2..12
+  amount           Decimal             @db.Decimal(14, 2)
+  transactionCount Int                 @default(1)
+  cardType         String?
+  note             String?
+  createdAt        DateTime            @default(now())
+  updatedAt        DateTime            @updatedAt
+
+  expectedPayments ExpectedPayment[]
+
+  @@index([dailySaleId])
+}
+
+// ---------------------------------------------------------------------------
+// Beklenen / gerçekleşen ödemeler ve fark analizi
+// ---------------------------------------------------------------------------
+
+enum ExpectedPaymentStatus {
+  WAITING // Bekleniyor
+  DUE_TODAY // Bugün yatmalı
+  DELAYED // Gecikti
+  PARTIALLY_PAID // Kısmi ödeme
+  FULLY_PAID // Tam ödendi
+  DIFFERENCE_FOUND // Fark bulundu
+}
+
+model ExpectedPayment {
+  id                  String                @id @default(cuid())
+  companyId           String
+  company             Company               @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  branchId            String
+  branch              Branch                @relation(fields: [branchId], references: [id], onDelete: Restrict)
+  bankId              String
+  bank                Bank                  @relation(fields: [bankId], references: [id], onDelete: Restrict)
+  posId               String
+  pos                 PosDevice             @relation(fields: [posId], references: [id], onDelete: Restrict)
+  tariffVersionId     String
+  tariffVersion       TariffVersion         @relation(fields: [tariffVersionId], references: [id], onDelete: Restrict)
+  dailySaleId         String?
+  dailySale           DailySale?            @relation(fields: [dailySaleId], references: [id], onDelete: SetNull)
+  dailySaleItemId     String?
+  dailySaleItem       DailySaleItem?        @relation(fields: [dailySaleItemId], references: [id], onDelete: SetNull)
+  saleDate            DateTime              @db.Date
+  expectedPaymentDate DateTime              @db.Date
+  grossAmount         Decimal               @db.Decimal(14, 2)
+  expectedDeduction   Decimal               @db.Decimal(14, 2)
+  expectedNet         Decimal               @db.Decimal(14, 2)
+  status              ExpectedPaymentStatus @default(WAITING)
+  sourceType          SourceType            @default(USER_INPUT)
+  verificationStatus  VerificationStatus    @default(UNVERIFIED)
+  createdAt           DateTime              @default(now())
+  updatedAt           DateTime              @updatedAt
+  createdById         String?
+
+  actualPayments     ActualPayment[]
+  paymentDifferences PaymentDifference[]
+
+  @@index([companyId])
+  @@index([posId, expectedPaymentDate])
+  @@index([status])
+}
+
+model ActualPayment {
+  id                 String             @id @default(cuid())
+  companyId          String
+  company            Company            @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  expectedPaymentId  String
+  expectedPayment    ExpectedPayment    @relation(fields: [expectedPaymentId], references: [id], onDelete: Cascade)
+  receivedAmount     Decimal            @db.Decimal(14, 2)
+  receivedDate       DateTime           @db.Date
+  bankDescription    String?
+  documentUrl        String?
+  sourceType         SourceType         @default(USER_INPUT)
+  verificationStatus VerificationStatus @default(UNVERIFIED)
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+  deletedAt          DateTime?
+  createdById        String?
+
+  paymentDifferences PaymentDifference[]
+
+  @@index([companyId])
+  @@index([expectedPaymentId])
+}
+
+enum DifferenceStatus {
+  MATCHED // uyumlu
+  NEEDS_REVIEW // kontrol edilmeli
+  DELAYED // gecikmiş
+  PARTIALLY_PAID // kısmi ödeme
+  DIFFERENCE_FOUND // fark bulundu
+}
+
+/// Seviye 1 (matematiksel fark) + Seviye 2 (kural kontrolü) sonucu.
+/// Seviye 3 (AI açıklaması) `ruleExplanations` alanında saklanır; bu alan
+/// kural tabanlı (deterministik) üretilir, AI'a bağlı değildir.
+model PaymentDifference {
+  id                   String           @id @default(cuid())
+  companyId            String
+  company              Company          @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  expectedPaymentId    String
+  expectedPayment      ExpectedPayment  @relation(fields: [expectedPaymentId], references: [id], onDelete: Cascade)
+  actualPaymentId      String
+  actualPayment        ActualPayment    @relation(fields: [actualPaymentId], references: [id], onDelete: Cascade)
+  tariffVersionId      String
+  tariffVersion        TariffVersion    @relation(fields: [tariffVersionId], references: [id], onDelete: Restrict)
+  differenceAmount     Decimal          @db.Decimal(14, 2)
+  differencePercentage Decimal          @db.Decimal(8, 3)
+  delayDays            Int              @default(0)
+  estimatedAppliedRate Decimal?         @db.Decimal(6, 3)
+  roundingTolerance    Decimal          @default(1) @db.Decimal(14, 2)
+  status               DifferenceStatus
+  ruleExplanations     Json? // olası neden / kontrol edilecek belge / bankaya sorulacak soru / önerilen işlem
+  createdAt            DateTime         @default(now())
+  createdById          String?
+
+  @@index([companyId])
+  @@index([expectedPaymentId])
+}
+
+// ---------------------------------------------------------------------------
+// Sözleşme analizi
+// ---------------------------------------------------------------------------
+
+enum ContractStatus {
+  UPLOADED
+  EXTRACTING_TEXT
+  CLASSIFYING_CLAUSES
+  CALCULATING_IMPACT
+  COMPLETED
+  NEEDS_MANUAL_REVIEW
+}
+
+model Contract {
+  id          String         @id @default(cuid())
+  companyId   String
+  company     Company        @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  bankId      String?
+  bank        Bank?          @relation(fields: [bankId], references: [id], onDelete: SetNull)
+  posId       String?
+  pos         PosDevice?     @relation(fields: [posId], references: [id], onDelete: SetNull)
+  title       String
+  status      ContractStatus @default(UPLOADED)
+  sourceType  SourceType     @default(USER_INPUT)
+  uploadedAt  DateTime       @default(now())
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+  deletedAt   DateTime?
+  createdById String?
+
+  pages    ContractPage[]
+  analysis ContractAnalysis?
+
+  @@index([companyId])
+}
+
+model ContractPage {
+  id            String   @id @default(cuid())
+  contractId    String
+  contract      Contract @relation(fields: [contractId], references: [id], onDelete: Cascade)
+  pageNumber    Int
+  fileUrl       String
+  extractedText String?
+  createdAt     DateTime @default(now())
+
+  @@unique([contractId, pageNumber])
+}
+
+/// AI sağlayıcısından bağımsız sonuç modeli (bkz. `analyzeDocument()` /
+/// `summarizeContract()` provider arayüzü — Aşama 10).
+model ContractAnalysis {
+  id                   String   @id @default(cuid())
+  contractId           String   @unique
+  contract             Contract @relation(fields: [contractId], references: [id], onDelete: Cascade)
+  summary60s           String
+  advantages           Json // string[]
+  attentionPoints      Json // string[]
+  commissionSummary    Json?
+  /// Aşama 11 (mevcut/yeni sözleşme karşılaştırması) için yapılandırılmış
+  /// alanlar — bkz. `ComparableTerms` (src/server/contract-analysis/provider.ts).
+  comparableTerms      Json?
+  valorSummary         String?
+  volumeCommitmentNote String?
+  earlyTerminationNote String?
+  autoRenewalNote      String?
+  unilateralChangeNote String?
+  confidenceScore      Float
+  createdAt            DateTime @default(now())
+  createdById          String?
+
+  risks     ContractRisk[]
+  questions ContractQuestion[]
+
+  @@index([contractId])
+}
+
+enum RiskSeverity {
+  LOW
+  MEDIUM
+  HIGH
+}
+
+model ContractRisk {
+  id                  String           @id @default(cuid())
+  contractAnalysisId  String
+  contractAnalysis    ContractAnalysis @relation(fields: [contractAnalysisId], references: [id], onDelete: Cascade)
+  text                String
+  severity            RiskSeverity
+  sourcePageNumber    Int?
+  sourceClauseRef     String?
+  /// "Şerh/düzeltme önerisi" — sistem hukukî karar vermez, yalnızca destek metni sunar (bkz. UX §15.3-F).
+  suggestedCorrection String?
+  createdAt           DateTime         @default(now())
+
+  @@index([contractAnalysisId])
+}
+
+model ContractQuestion {
+  id                 String           @id @default(cuid())
+  contractAnalysisId String
+  contractAnalysis   ContractAnalysis @relation(fields: [contractAnalysisId], references: [id], onDelete: Cascade)
+  question           String
+  createdAt          DateTime         @default(now())
+
+  @@index([contractAnalysisId])
+}
+
+// ---------------------------------------------------------------------------
+// Raporlar, bildirimler, denetim
+// ---------------------------------------------------------------------------
+
+enum ReportType {
+  DAILY_SUMMARY
+  MONTHLY_COST
+  BANK_COMPARISON
+  POS_COMPARISON
+  DIFFERENCE_REPORT
+  ANNUAL_NEGOTIATION
+  CONTRACT_ANALYSIS_SUMMARY
+}
+
+enum ReportFormat {
+  PDF
+  EXCEL
+  HTML
+}
+
+model Report {
+  id          String       @id @default(cuid())
+  companyId   String
+  company     Company      @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  type        ReportType
+  format      ReportFormat
+  periodStart DateTime     @db.Date
+  periodEnd   DateTime     @db.Date
+  fileUrl     String?
+  generatedAt DateTime     @default(now())
+  createdById String?
+
+  @@index([companyId])
+}
+
+enum NotificationType {
+  PAYMENT_DUE_TOMORROW
+  PAYMENT_DUE_TODAY
+  PAYMENT_DELAYED
+  PAYMENT_BELOW_EXPECTED
+  TARIFF_EXPIRING
+  CAMPAIGN_EXPIRING
+  VOLUME_COMMITMENT_RISK
+  MONTHLY_REPORT_READY
+  NEW_DEVICE_LOGIN
+  CRITICAL_SETTING_CHANGE
+  /// Aşama 15 — sistem yöneticisinin "eksik veri uyarısı gönder" aracı.
+  MISSING_DATA_WARNING
+}
+
+enum NotificationChannel {
+  TELEGRAM
+  IN_APP
+}
+
+enum NotificationStatus {
+  PENDING
+  SENT
+  FAILED
+  READ
+}
+
+model Notification {
+  id                String              @id @default(cuid())
+  companyId         String
+  company           Company             @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  companyUserId     String?
+  type              NotificationType
+  channel           NotificationChannel
+  title             String
+  body              String
+  status            NotificationStatus  @default(PENDING)
+  relatedEntityType String?
+  relatedEntityId   String?
+  sentAt            DateTime?
+  createdAt         DateTime            @default(now())
+
+  /// Aynı olay için tekrar bildirim oluşturulmasını engeller (ör.
+  /// "PAYMENT_DUE_TODAY:{expectedPaymentId}:{companyUserId}:{gün}").
+  idempotencyKey String  @unique
+  attemptCount   Int     @default(0)
+  lastError      String?
+  /// "Daha Sonra Hatırlat" — bu zamana kadar tekrar gönderilmez.
+  snoozedUntil   DateTime?
+
+  @@index([companyId])
+  @@index([status])
+}
+
+/// Bildirim tercihleri: tür bazlı açık/kapalı, günlük özet saati, sessiz
+/// saatler (bkz. Aşama 12 prompt paketi). Kullanıcı bazlı yetki (hangi rol
+/// hangi bildirim türünü alır) `src/lib/notifications/role-gate.ts`
+/// içindeki sabit eşlemeyle uygulanır — ayrı bir tablo gerektirmez.
+model NotificationPreference {
+  id            String      @id @default(cuid())
+  companyUserId String      @unique
+  companyUser   CompanyUser @relation(fields: [companyUserId], references: [id], onDelete: Cascade)
+  /// `Record<NotificationType, boolean>` — belirtilmeyen türler açık sayılır.
+  enabledTypes     Json?
+  /// 0-23 — null ise günlük özet kapalı.
+  dailySummaryHour Int?
+  /// 0-23 — ikisi de doluysa bu aralıkta (gece yarısını da kapsayabilir) bildirim gönderilmez.
+  quietHoursStart  Int?
+  quietHoursEnd    Int?
+  createdAt        DateTime    @default(now())
+  updatedAt        DateTime    @updatedAt
+}
+
+enum AuditActorType {
+  USER
+  SYSTEM
+  AI
+}
+
+/// Kritik işlemlerin (tarife silme/supersede, kullanıcı ekleme, ayar
+/// değişikliği vb.) değişmez kaydı. Bu tablo güncellenmez/silinmez.
+model AuditLog {
+  id          String         @id @default(cuid())
+  companyId   String?
+  company     Company?       @relation(fields: [companyId], references: [id], onDelete: SetNull)
+  actorType   AuditActorType
+  actorUserId String?
+  action      String
+  entityType  String
+  entityId    String
+  before      Json?
+  after       Json?
+  createdAt   DateTime       @default(now())
+
+  @@index([companyId])
+  @@index([entityType, entityId])
+}

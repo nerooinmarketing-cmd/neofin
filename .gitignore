@@ -39,3 +39,12 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+/src/generated/prisma
+
+# yerel dosya yüklemeleri (dev-only depolama, bkz. src/server/storage/file-storage.ts)
+/public/uploads
+
+# .agents/skills'e mutlak yol sembolik linkleri (bu makineye özgü, taşınabilir değil)
+/.claude
+/.windsurf
