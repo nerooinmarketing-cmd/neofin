@@ -63,23 +63,23 @@ model Company {
   updatedAt             DateTime      @updatedAt
   deletedAt             DateTime?
 
-  companyUsers       CompanyUser[]
-  telegramAccounts   TelegramAccount[]
-  loginApprovals     LoginApproval[]
-  sessions           Session[]
-  branches           Branch[]
-  banks              Bank[]
-  posDevices         PosDevice[]
-  tariffVersions     TariffVersion[]
-  dailySales         DailySale[]
-  expectedPayments   ExpectedPayment[]
-  actualPayments     ActualPayment[]
-  paymentDifferences PaymentDifference[]
-  contracts          Contract[]
-  reports            Report[]
-  notifications      Notification[]
-  auditLogs          AuditLog[]
-  supportNotes       SupportNote[]
+  companyUsers         CompanyUser[]
+  telegramAccounts     TelegramAccount[]
+  loginApprovals       LoginApproval[]
+  sessions             Session[]
+  branches             Branch[]
+  banks                Bank[]
+  posDevices           PosDevice[]
+  tariffVersions       TariffVersion[]
+  dailySales           DailySale[]
+  expectedPayments     ExpectedPayment[]
+  actualPayments       ActualPayment[]
+  paymentDifferences   PaymentDifference[]
+  contracts            Contract[]
+  reports              Report[]
+  notifications        Notification[]
+  auditLogs            AuditLog[]
+  supportNotes         SupportNote[]
   telegramPairingCodes TelegramPairingCode[]
 
   @@index([status])
@@ -97,7 +97,10 @@ model CompanyUser {
   company     Company         @relation(fields: [companyId], references: [id], onDelete: Cascade)
   name        String
   email       String?
-  phone       String?
+  /// GSM-ile-giriş bu alanda tam eşleşme arar (bkz. `src/lib/phone.ts`
+  /// `normalizePhone`) — bu yüzden firma sınırı olmadan sistem genelinde
+  /// benzersizdir (bir telefon numarası yalnızca bir kullanıcıya ait olabilir).
+  phone       String?         @unique
   role        CompanyUserRole
   isActive    Boolean         @default(true)
   createdAt   DateTime        @default(now())
@@ -234,16 +237,17 @@ model Session {
 /// olsun" kuralı burada uygulanır — CompanyUser/Telegram oturumundan
 /// tamamen bağımsız bir kimlik doğrulama.
 model SystemAdmin {
-  id           String    @id @default(cuid())
-  email        String    @unique
+  id           String   @id @default(cuid())
+  email        String   @unique
   passwordHash String
   name         String
-  isActive     Boolean   @default(true)
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 
-  sessions     SystemAdminSession[]
-  supportNotes SupportNote[]
+  sessions      SystemAdminSession[]
+  supportNotes  SupportNote[]
+  quoteRequests QuoteRequest[]
 }
 
 model SystemAdminSession {
@@ -911,8 +915,8 @@ model Notification {
 
   /// Aynı olay için tekrar bildirim oluşturulmasını engeller (ör.
   /// "PAYMENT_DUE_TODAY:{expectedPaymentId}:{companyUserId}:{gün}").
-  idempotencyKey String  @unique
-  attemptCount   Int     @default(0)
+  idempotencyKey String    @unique
+  attemptCount   Int       @default(0)
   lastError      String?
   /// "Daha Sonra Hatırlat" — bu zamana kadar tekrar gönderilmez.
   snoozedUntil   DateTime?
@@ -926,9 +930,9 @@ model Notification {
 /// hangi bildirim türünü alır) `src/lib/notifications/role-gate.ts`
 /// içindeki sabit eşlemeyle uygulanır — ayrı bir tablo gerektirmez.
 model NotificationPreference {
-  id            String      @id @default(cuid())
-  companyUserId String      @unique
-  companyUser   CompanyUser @relation(fields: [companyUserId], references: [id], onDelete: Cascade)
+  id               String      @id @default(cuid())
+  companyUserId    String      @unique
+  companyUser      CompanyUser @relation(fields: [companyUserId], references: [id], onDelete: Cascade)
   /// `Record<NotificationType, boolean>` — belirtilmeyen türler açık sayılır.
   enabledTypes     Json?
   /// 0-23 — null ise günlük özet kapalı.
@@ -963,4 +967,30 @@ model AuditLog {
 
   @@index([companyId])
   @@index([entityType, entityId])
+}
+
+enum QuoteRequestStatus {
+  NEW
+  CONTACTED
+  CLOSED
+}
+
+/// Halka açık tanıtım sayfasındaki ("/") "Teklif Alın" formundan gelen
+/// talepler. Bir `Company`/`CompanyUser` oturumuyla ilgisi yoktur — ziyaretçi
+/// henüz müşteri değildir. Yönetici paneli (`/admin/teklifler`) bu tabloyu
+/// listeler ki sistem yöneticisi kişiyle birebir görüşüp firma oluşturabilsin.
+model QuoteRequest {
+  id            String             @id @default(cuid())
+  name          String
+  phone         String
+  companyName   String?
+  message       String?
+  status        QuoteRequestStatus @default(NEW)
+  contactedAt   DateTime?
+  contactedById String?
+  contactedBy   SystemAdmin?       @relation(fields: [contactedById], references: [id], onDelete: SetNull)
+  createdAt     DateTime           @default(now())
+  updatedAt     DateTime           @updatedAt
+
+  @@index([status])
 }

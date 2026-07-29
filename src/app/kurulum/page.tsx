@@ -8,7 +8,7 @@ export default async function KurulumPage() {
   const { company, bank, pos } = await getOnboardingState(ctx);
 
   if (company.onboardingCompletedAt) {
-    redirect("/");
+    redirect("/panel");
   }
 
   return (

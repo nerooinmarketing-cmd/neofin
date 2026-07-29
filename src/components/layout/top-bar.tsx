@@ -50,16 +50,16 @@ export function TopBar({
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
             <DropdownMenuItem asChild>
-              <Link href="/gun-sonu">Gün Sonu Gir</Link>
+              <Link href="/panel/gun-sonu">Gün Sonu Gir</Link>
             </DropdownMenuItem>
             <DropdownMenuItem asChild>
-              <Link href="/odemeler/gerceklesen">Hesaba Geçeni Gir</Link>
+              <Link href="/panel/odemeler/gerceklesen">Hesaba Geçeni Gir</Link>
             </DropdownMenuItem>
             <DropdownMenuItem asChild>
-              <Link href="/bankalar">Yeni POS Ekle</Link>
+              <Link href="/panel/bankalar">Yeni POS Ekle</Link>
             </DropdownMenuItem>
             <DropdownMenuItem asChild>
-              <Link href="/sozlesmeler">Sözleşme Analiz Et</Link>
+              <Link href="/panel/sozlesmeler">Sözleşme Analiz Et</Link>
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
@@ -112,10 +112,10 @@ export function TopBar({
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
             <DropdownMenuItem asChild>
-              <Link href="/ayarlar">Profil</Link>
+              <Link href="/panel/ayarlar">Profil</Link>
             </DropdownMenuItem>
             <DropdownMenuItem asChild>
-              <Link href="/ayarlar">Ayarlar</Link>
+              <Link href="/panel/ayarlar">Ayarlar</Link>
             </DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem onClick={logout}>Çıkış yap</DropdownMenuItem>

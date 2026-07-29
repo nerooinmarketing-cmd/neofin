@@ -38,16 +38,16 @@ function buildInlineKeyboard(notification: {
   if (PAYMENT_TYPES.includes(notification.type) && notification.relatedEntityId) {
     return {
       inline_keyboard: [
-        [{ text: "Ödeme Geldi", url: `${appUrl}/odemeler/beklenen/${notification.relatedEntityId}/kaydet` }],
+        [{ text: "Ödeme Geldi", url: `${appUrl}/panel/odemeler/beklenen/${notification.relatedEntityId}/kaydet` }],
         [
           { text: "Daha Sonra Hatırlat", callback_data: `snooze:${notification.id}` },
-          { text: "Paneli Aç", url: appUrl },
+          { text: "Paneli Aç", url: `${appUrl}/panel` },
         ],
       ],
     };
   }
 
-  return { inline_keyboard: [[{ text: "Paneli Aç", url: appUrl }]] };
+  return { inline_keyboard: [[{ text: "Paneli Aç", url: `${appUrl}/panel` }]] };
 }
 
 interface TargetUser {

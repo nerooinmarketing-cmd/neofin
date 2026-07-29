@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
 import { getTenantContextFromRequest } from "@/server/auth/api-tenant-context";
 import { companySettingsRepository } from "@/server/repositories/company-settings-repository";
+import { DuplicatePhoneError } from "@/server/errors";
 
 const ownProfileSchema = z.object({
   name: z.string().min(2, "Ad gerekli"),
@@ -22,10 +23,17 @@ export async function PATCH(request: NextRequest) {
     );
   }
 
-  const user = await companySettingsRepository.updateOwnUser(ctx, {
-    name: parsed.data.name,
-    email: parsed.data.email || undefined,
-    phone: parsed.data.phone || undefined,
-  });
-  return NextResponse.json({ ok: true, user });
+  try {
+    const user = await companySettingsRepository.updateOwnUser(ctx, {
+      name: parsed.data.name,
+      email: parsed.data.email || undefined,
+      phone: parsed.data.phone || undefined,
+    });
+    return NextResponse.json({ ok: true, user });
+  } catch (error) {
+    if (error instanceof DuplicatePhoneError) {
+      return NextResponse.json({ error: error.message }, { status: 409 });
+    }
+    throw error;
+  }
 }

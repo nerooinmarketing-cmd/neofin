@@ -2,6 +2,8 @@ import { prisma } from "@/lib/prisma";
 import { Prisma } from "@/generated/prisma/client";
 import type { TenantContext } from "@/server/tenant-context";
 import type { CompanyInfoInput } from "@/server/onboarding/schemas";
+import { DuplicatePhoneError } from "@/server/errors";
+import { normalizePhone } from "@/lib/phone";
 
 export class DuplicateTaxNumberError extends Error {
   constructor() {
@@ -60,9 +62,20 @@ export const companySettingsRepository = {
   },
 
   async updateOwnUser(ctx: TenantContext, input: { name: string; email?: string; phone?: string }) {
-    return prisma.companyUser.update({
-      where: { id: ctx.companyUserId },
-      data: { name: input.name, email: input.email, phone: input.phone },
-    });
+    try {
+      return await prisma.companyUser.update({
+        where: { id: ctx.companyUserId },
+        data: {
+          name: input.name,
+          email: input.email,
+          phone: input.phone ? normalizePhone(input.phone) : undefined,
+        },
+      });
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+        throw new DuplicatePhoneError();
+      }
+      throw error;
+    }
   },
 };

@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import { prisma } from "@/lib/prisma";
 import { telegramBotClient, type InlineKeyboardMarkup } from "@/server/telegram/bot-client";
 import { formatDate } from "@/lib/format";
+import { normalizePhone } from "@/lib/phone";
 
 const APPROVAL_TTL_MS = 5 * 60 * 1000; // 5 dakika — bkz. Aşama 3 §"Onay isteği 5 dakika sonra geçersiz olsun"
 
@@ -10,28 +11,71 @@ function generateToken(): string {
 }
 
 export interface CreateLoginRequestInput {
+  phone: string;
   deviceInfo?: string;
   ipAddress?: string;
-  purpose?: string; // "LOGIN" | "TARIFF_DELETE" | "USER_ADD" ...
 }
 
-export async function createLoginRequest(input: CreateLoginRequestInput) {
+export type CreateLoginRequestResult =
+  | { ok: true; token: string; expiresAt: Date }
+  | { ok: false; error: "NOT_FOUND" | "NO_TELEGRAM" };
+
+/**
+ * GSM-ile-giriş: kullanıcı web'de yalnızca telefon numarasını girer.
+ * Numara zaten Telegram'a bağlı bir `CompanyUser`e ait olduğu için (bkz.
+ * `prisma/schema.prisma` `CompanyUser.phone @unique`), eski akıştaki
+ * "Telegram'ı aç → /start'a bas" adımına gerek kalmadan onay mesajı
+ * doğrudan kullanıcının zaten bağlı olan Telegram hesabına gönderilir.
+ */
+export async function createLoginRequestByPhone(
+  input: CreateLoginRequestInput,
+): Promise<CreateLoginRequestResult> {
+  const normalizedPhone = normalizePhone(input.phone);
+
+  const companyUser = await prisma.companyUser.findFirst({
+    where: { phone: normalizedPhone, isActive: true, deletedAt: null },
+    include: { company: true, telegramAccounts: true },
+  });
+  if (!companyUser) return { ok: false, error: "NOT_FOUND" };
+
+  const telegramAccount = companyUser.telegramAccounts[0];
+  if (!telegramAccount) return { ok: false, error: "NO_TELEGRAM" };
+
   const approval = await prisma.loginApproval.create({
     data: {
       token: generateToken(),
-      purpose: input.purpose ?? "LOGIN",
+      purpose: "LOGIN",
       deviceInfo: input.deviceInfo,
       ipAddress: input.ipAddress,
       expiresAt: new Date(Date.now() + APPROVAL_TTL_MS),
+      telegramAccountId: telegramAccount.id,
+      companyId: companyUser.companyId,
     },
   });
 
-  const botUsername = process.env.TELEGRAM_BOT_USERNAME;
-  const telegramDeepLink = botUsername
-    ? `https://t.me/${botUsername}?start=${approval.token}`
-    : null;
+  const keyboard: InlineKeyboardMarkup = {
+    inline_keyboard: [
+      [
+        { text: "✅ Onayla", callback_data: `approve:${approval.id}` },
+        { text: "❌ Reddet", callback_data: `deny:${approval.id}` },
+      ],
+    ],
+  };
 
-  return { token: approval.token, expiresAt: approval.expiresAt, telegramDeepLink };
+  await telegramBotClient.sendMessage(
+    telegramAccount.telegramUserId.toString(),
+    [
+      "Giriş isteği",
+      `Firma: ${companyUser.company.shortName ?? companyUser.company.phone}`,
+      `Cihaz: ${input.deviceInfo ?? "bilinmiyor"}`,
+      `Tarih: ${formatDate(approval.requestedAt)}`,
+      "",
+      "Bu giriş size mi ait?",
+    ].join("\n"),
+    { replyMarkup: keyboard },
+  );
+
+  return { ok: true, token: approval.token, expiresAt: approval.expiresAt };
 }
 
 /** /login/waiting sayfasının kısa aralıklarla sorguladığı uç. */
@@ -46,94 +90,6 @@ export async function getApprovalStatus(token: string) {
     });
   }
   return approval;
-}
-
-/**
- * Kullanıcı Telegram botuna `/start <token>` gönderdiğinde webhook'tan
- * çağrılır. Telegram hesabı ilk kez görülüyorsa kaydı oluşturulur; bir firma
- * kullanıcısıyla eşleşmiyorsa istek NOT_LINKED olarak işaretlenir ve panel
- * açılmaz (bkz. UX dokümanı §4.2).
- */
-export async function handleTelegramStart(params: {
-  token: string;
-  telegramUserId: bigint;
-  firstName?: string;
-  lastName?: string;
-  username?: string;
-  chatId: number;
-}) {
-  const telegramAccount = await prisma.telegramAccount.upsert({
-    where: { telegramUserId: params.telegramUserId },
-    update: {
-      firstName: params.firstName,
-      lastName: params.lastName,
-      username: params.username,
-    },
-    create: {
-      telegramUserId: params.telegramUserId,
-      firstName: params.firstName,
-      lastName: params.lastName,
-      username: params.username,
-    },
-  });
-
-  const approval = await getApprovalStatus(params.token);
-  if (!approval || approval.status !== "PENDING") {
-    await telegramBotClient.sendMessage(
-      params.chatId,
-      "Bu giriş bağlantısı artık geçerli değil. Lütfen web sayfasından yeniden deneyin.",
-    );
-    return;
-  }
-
-  if (!telegramAccount.companyUserId) {
-    await prisma.loginApproval.update({
-      where: { id: approval.id },
-      data: {
-        status: "NOT_LINKED",
-        telegramAccountId: telegramAccount.id,
-        respondedAt: new Date(),
-      },
-    });
-    await telegramBotClient.sendMessage(
-      params.chatId,
-      "Bu hesap henüz bir firma ile eşleştirilmemiş. Web sayfasında devam etmek için yöneticinizden eşleştirme kodu isteyin.",
-    );
-    return;
-  }
-
-  const companyUser = await prisma.companyUser.findUniqueOrThrow({
-    where: { id: telegramAccount.companyUserId },
-    include: { company: true },
-  });
-
-  await prisma.loginApproval.update({
-    where: { id: approval.id },
-    data: { telegramAccountId: telegramAccount.id, companyId: companyUser.companyId },
-  });
-
-  const purposeLabel = approval.purpose === "LOGIN" ? "Giriş" : approval.purpose;
-  const keyboard: InlineKeyboardMarkup = {
-    inline_keyboard: [
-      [
-        { text: "✅ Onayla", callback_data: `approve:${approval.id}` },
-        { text: "❌ Reddet", callback_data: `deny:${approval.id}` },
-      ],
-    ],
-  };
-
-  await telegramBotClient.sendMessage(
-    params.chatId,
-    [
-      `${purposeLabel} isteği`,
-      `Firma: ${companyUser.company.shortName ?? companyUser.company.phone}`,
-      `Cihaz: ${approval.deviceInfo ?? "bilinmiyor"}`,
-      `Tarih: ${formatDate(approval.requestedAt)}`,
-      "",
-      "Bu giriş size mi ait?",
-    ].join("\n"),
-    { replyMarkup: keyboard },
-  );
 }
 
 /** Onayla/Reddet inline butonlarına basıldığında webhook'tan çağrılır. */

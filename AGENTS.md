@@ -15,7 +15,7 @@ panel)**, **Aşama 9 (Fark Analizi Merkezi)**, **Aşama 10 (Sözleşme Analiz
 Merkezi)**, **Aşama 11 (Sözleşme Karşılaştırma)**, **Aşama 12 (Telegram
 Bildirimleri)**, **Aşama 13 (Raporlar)**, **Aşama 14 (Finans Asistanı)** ve
 **Aşama 15 (Yönetici Paneli)** tamamlandı. `/admin/**` — platform çalışanları
-için ayrı bir panel: **route ve yetki olarak** `(app)` tenant panelinden
+için ayrı bir panel: **route ve yetki olarak** `/panel` tenant panelinden
 tamamen bağımsız. Ayrı bir kimlik doğrulama sistemi kullanır —
 `SystemAdmin` modeli (CompanyUser'dan bağımsız, e-posta/şifre — Node'un
 yerleşik `scrypt`'i ile hash'lenir, bcrypt bağımlılığı eklenmedi),
@@ -122,9 +122,11 @@ kendi rolünü değiştiremez/kendini pasife alamaz. `/ayarlar` firma profili
 düzenleme (`company-settings-repository.ts`, onboarding'in
 `companyInfoSchema`'sını yeniden kullanır) + "Hesabım" (kendi ad/e-posta/
 telefon) + `/bildirimler`'e bağlantı içerir. Bu iki sayfa gerçek
-`userName`/`companyName` değerlerini `AppShell`'e prop olarak geçiyor —
-`AppShell`'in varsayılan "Şenol Bey"/"Örnek Ticaret A.Ş." değerleri hâlâ
-diğer ~27 sayfada kullanılıyor (bilinen, henüz giderilmemiş bir eksiklik).
+`userName`/`companyName` değerlerini `AppShell`'e prop olarak geçiyor.
+Daha sonra panel genelindeki kalan ~26 sayfa da aynı desene taşındı
+(`src/server/auth/shell-identity.ts` `getShellIdentity(ctx)`) — `AppShell`'in
+"Şenol Bey"/"Örnek Ticaret A.Ş." varsayılanları artık hiçbir sayfada
+kullanılmıyor, yalnızca prop verilmediğinde bir fallback olarak kalıyor.
 
 **Hesaplama motoru kuralı:** `src/lib/tariff-engine/` UI'dan/Prisma'dan
 tamamen bağımsız saf fonksiyonlardır — Prisma tipi, `@/lib/prisma`, React
@@ -144,13 +146,67 @@ adım içeriğini düz bir `<div>` içine koyun, son adımın "Kaydet" butonu
 doğrudan tetiklensin — native form submit event'ine hiç güvenmeyin.
 
 Yeni bir firma onboarding'i tamamlamadan (`Company.onboardingCompletedAt`
-boş) `(app)` grubundaki hiçbir sayfayı göremez — `/kurulum`'a yönlendirilir.
+boş) `/panel` grubundaki hiçbir sayfayı göremez — `/kurulum`'a yönlendirilir.
 Yeni bir modül/sayfa eklerken bunu hesaba katın (test firmalarının çoğu
 zaten onboarding'i tamamlanmış durumda — bkz. seed script).
 
-Tüm `(app)` route grubu altındaki sayfalar (`src/app/(app)/...`, yani `/`,
-`/bankalar`, `/tarifeler`, ... hepsi) oturum zorunludur — bkz. §"Giriş"
-bölümü. `/login/**`, `/showcase` ve `/api/**` bu korumanın dışındadır.
+Tüm `/panel` altındaki sayfalar (`src/app/panel/...`, yani `/panel`,
+`/panel/bankalar`, `/panel/tarifeler`, ... hepsi) oturum zorunludur — bkz.
+§"Giriş" bölümü. `/` (tanıtım sayfası), `/login/**`, `/telegram-app/**`,
+`/admin/**`, `/showcase` ve `/api/**` bu korumanın dışındadır.
+
+**Ek özellik — Halka açık tanıtım sayfası + `/panel` taşınması:** kullanıcı
+isteği üzerine, panel (`(app)` route grubu — tüm eski `/bankalar`,
+`/tarifeler`, vb.) tamamen `/panel` altına taşındı ki ana domain (`/`)
+herkese açık, oturum gerektirmeyen bir tanıtım/landing sayfası olabilsin
+(`src/app/page.tsx`). `src/middleware.ts` yalnızca `/` için istisna tanır;
+geri kalan her şey eskisi gibi oturum ister. Tanıtım sayfasında sabit bir
+fiyat yayınlanmaz — "Teklif Alın" formu (`src/components/landing/quote-
+request-form.tsx`) `QuoteRequest` tablosuna yazar (bkz.
+`prisma/TENANT_SECURITY.md` §7 — firma eşleştirmesi öncesi tablo, `companyId`
+yok) ve `/admin/teklifler`'de listelenir; sistem yöneticisi kişiyle birebir
+görüşüp durumu (Yeni/Görüşüldü/Kapandı) günceller.
+
+**Ek özellik — GSM numarasıyla Telegram onaylı giriş:** eski "Telegram ile
+Doğrula" (deep-link tıkla → `/start <token>`) akışı kaldırıldı.
+`/login`'de kullanıcı yalnızca telefon numarasını girer;
+`CompanyUser.phone` (sistem genelinde `@unique`, `src/lib/phone.ts`
+`normalizePhone()` ile normalize edilir) üzerinden ilgili kullanıcı ve zaten
+bağlı Telegram hesabı bulunur, onay mesajı **doğrudan** o hesaba gönderilir
+(bkz. `login-approval-service.ts` `createLoginRequestByPhone`) — kullanıcının
+Telegram'ı ayrıca açmasına gerek kalmaz. Numara kayıtlı değilse veya
+Telegram'ı bağlı değilse `/login` sayfasında anında net bir hata gösterilir.
+
+**Ek özellik — Telegram bot menüsü (4 sabit buton):** `getMainMenuKeyboard()`
+(`src/server/telegram/main-menu.ts`) bir `ReplyKeyboardMarkup` kalıcı
+menüsü kurar; eşleştirme tamamlanınca gönderilir (`pairing-service.ts`).
+"➕ Yeni POS" (`yeni-pos-conversation.ts`, gün sonu akışıyla aynı
+`TelegramConversationState` deseni: banka→tür→ad→terminal→üye no→onay) ve
+"💰 Gün Sonu Gir" (mevcut `/gunsonu` akışını tetikler) düz metin butonlarıdır.
+"📊 Raporlar" (`reports-menu.ts`) web'deki 7 raporun aynısını listeler;
+seçilen rapor **gerçek bir PDF** olarak üretilip (`src/server/reports/
+pdf.ts`, `puppeteer-core` ile web rapor sayfasının print-CSS'i birebir
+render edilir — ilgili kullanıcı için çok kısa ömürlü, tek kullanımlık bir
+oturum açılıp render biter bitmez iptal edilir) `sendDocument` ile
+gönderilir. Docker imajının runner aşaması `apt`'ten `chromium` kurar
+(`PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium`) — bu, `puppeteer` paketinin
+kendi Chromium'unu indirmesinden farklıdır ve Next'in "standalone" çıktısıyla
+uyumludur.
+
+**Ek özellik — Telegram Mini App: POS Bilgi Formu:** "📄 POS Bilgi Formu"
+butonu düz metin değil bir `web_app` butonudur — tıklanınca
+`/telegram-app/pos-bilgi-formu` bir Telegram WebView'ında açılır (bizim
+oturum cookie'mizi taşımaz). Kimlik doğrulama Telegram'ın `initData`'sı
+iledir: bot token ile HMAC imzası doğrulanır (`src/server/telegram/verify-
+init-data.ts`, Telegram'ın resmî algoritması) ve doğrulanan Telegram
+kullanıcısı `TelegramAccount` üzerinden bir `TenantContext`'e çözülür.
+Form, web'deki `tariff-wizard.tsx` ile aynı 8 bölümü + öncesinde bir
+banka/POS seçim adımını (`src/components/telegram-app/pos-bilgi-form-mini-
+app.tsx`) içerir ve aynı gönderim mantığını kullanır — `/api/tariffs`
+(cookie) ile `/api/telegram-app/tariffs` (initData) ortak
+`processTariffFormData()` fonksiyonunu (`src/server/tariff/process-
+submission.ts`) paylaşır, tek doğruluk kaynağı budur. `src/middleware.ts`
+`/telegram-app/**`'i oturum kontrolünün dışında tutar.
 
 ## Kurallar
 
@@ -171,10 +227,11 @@ bölümü. `/login/**`, `/showcase` ve `/api/**` bu korumanın dışındadır.
   adapter zorunlu, `prisma.config.ts`, `output` zorunlu). Şema/istemci
   değişikliği yapmadan önce `.agents/skills/prisma-*` altındaki referans
   dosyalarını okuyun.
-- Giriş/oturum: `src/server/auth/` — `login-approval-service.ts` (Telegram
-  akışı), `session-service.ts` (cookie/oturum), `require-tenant-context.ts`
+- Giriş/oturum: `src/server/auth/` — `login-approval-service.ts` (GSM
+  numarasıyla giriş + Telegram onayı, bkz. `createLoginRequestByPhone`),
+  `session-service.ts` (cookie/oturum), `require-tenant-context.ts`
   (sayfa içinde zorunlu kontrol). Yeni bir server component sayfası
   eklerken tenant verisine erişmeden önce `requireTenantContext()`'i
-  çağırın (ya da `(app)` grubunun layout'una güvenin).
+  çağırın (ya da `/panel` grubunun layout'una güvenin).
 - `src/middleware.ts` Edge runtime'da çalışır — Prisma'yı **import etmeyin**
   (bkz. `src/server/auth/cookie.ts`, DB'siz sabitler için ayrı tutuldu).

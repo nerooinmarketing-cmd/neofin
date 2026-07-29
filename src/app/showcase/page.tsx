@@ -163,7 +163,7 @@ export default function ShowcasePage() {
             value={formatCurrency(33742.5)}
             icon={<Wallet className="size-4" />}
             helperText="2 ödeme"
-            href="/odemeler/beklenen"
+            href="/panel/odemeler/beklenen"
           />
           <StatCard
             label="Kontrol Edilmeli"

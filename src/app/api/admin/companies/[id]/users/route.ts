@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { getSystemAdminContextFromRequest } from "@/server/admin/api-admin-context";
 import { adminRepository } from "@/server/admin/admin-repository";
+import { DuplicatePhoneError } from "@/server/errors";
 import type { CompanyUserRole } from "@/generated/prisma/enums";
 
 export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -15,11 +16,18 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     return NextResponse.json({ error: "Ad ve rol gerekli" }, { status: 400 });
   }
 
-  const user = await adminRepository.createCompanyUser(id, {
-    name: body.name.trim(),
-    role: body.role,
-    email: body.email,
-    phone: body.phone,
-  });
-  return NextResponse.json({ ok: true, companyUserId: user.id });
+  try {
+    const user = await adminRepository.createCompanyUser(id, {
+      name: body.name.trim(),
+      role: body.role,
+      email: body.email,
+      phone: body.phone,
+    });
+    return NextResponse.json({ ok: true, companyUserId: user.id });
+  } catch (error) {
+    if (error instanceof DuplicatePhoneError) {
+      return NextResponse.json({ error: error.message }, { status: 409 });
+    }
+    throw error;
+  }
 }

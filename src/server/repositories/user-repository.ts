@@ -1,8 +1,10 @@
 import { prisma } from "@/lib/prisma";
+import { Prisma } from "@/generated/prisma/client";
 import type { CompanyUserRole } from "@/generated/prisma/enums";
 import type { TenantContext } from "@/server/tenant-context";
-import { NotFoundError } from "@/server/errors";
+import { DuplicatePhoneError, NotFoundError } from "@/server/errors";
 import { notificationService } from "@/server/notifications/notification-service";
+import { normalizePhone } from "@/lib/phone";
 
 export interface CreateCompanyUserInput {
   name: string;
@@ -46,33 +48,40 @@ export const userRepository = {
     return user;
   },
 
-  create(ctx: TenantContext, input: CreateCompanyUserInput) {
-    return prisma.$transaction(async (tx) => {
-      const user = await tx.companyUser.create({
-        data: {
-          companyId: ctx.companyId,
-          name: input.name,
-          role: input.role,
-          email: input.email,
-          phone: input.phone,
-          createdById: ctx.companyUserId,
-        },
-      });
+  async create(ctx: TenantContext, input: CreateCompanyUserInput) {
+    try {
+      return await prisma.$transaction(async (tx) => {
+        const user = await tx.companyUser.create({
+          data: {
+            companyId: ctx.companyId,
+            name: input.name,
+            role: input.role,
+            email: input.email,
+            phone: input.phone ? normalizePhone(input.phone) : undefined,
+            createdById: ctx.companyUserId,
+          },
+        });
 
-      await tx.auditLog.create({
-        data: {
-          companyId: ctx.companyId,
-          actorType: "USER",
-          actorUserId: ctx.companyUserId,
-          action: "COMPANY_USER_CREATE",
-          entityType: "CompanyUser",
-          entityId: user.id,
-          after: { name: user.name, role: user.role },
-        },
-      });
+        await tx.auditLog.create({
+          data: {
+            companyId: ctx.companyId,
+            actorType: "USER",
+            actorUserId: ctx.companyUserId,
+            action: "COMPANY_USER_CREATE",
+            entityType: "CompanyUser",
+            entityId: user.id,
+            after: { name: user.name, role: user.role },
+          },
+        });
 
-      return user;
-    });
+        return user;
+      });
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+        throw new DuplicatePhoneError();
+      }
+      throw error;
+    }
   },
 
   async setRole(ctx: TenantContext, id: string, role: CompanyUserRole) {

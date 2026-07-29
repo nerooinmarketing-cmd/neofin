@@ -34,7 +34,7 @@ export function PaymentFilterBar({ banks, posDevices, branches }: PaymentFilterB
     const params = new URLSearchParams(searchParams.toString());
     if (value && value !== "all") params.set(key, value);
     else params.delete(key);
-    router.push(`/odemeler/beklenen?${params.toString()}`);
+    router.push(`/panel/odemeler/beklenen?${params.toString()}`);
   }
 
   return (

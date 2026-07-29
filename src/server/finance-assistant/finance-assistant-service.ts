@@ -52,7 +52,7 @@ async function handleMonthlyDeductionReason(ctx: TenantContext): Promise<Handler
     recommendedAction: topBank
       ? `${topBank.bankName} bankasının oranını Banka Karşılaştırma raporunda inceleyin.`
       : "Bu ay için henüz satış verisi yok.",
-    relatedScreenHref: "/raporlar/aylik",
+    relatedScreenHref: "/panel/raporlar/aylik",
     relatedScreenLabel: "Aylık Maliyet Raporunu Aç",
   };
 }
@@ -74,7 +74,7 @@ async function handleBankCostComparison(ctx: TenantContext): Promise<HandlerResu
       highest && lowest && highest.bankName !== lowest.bankName
         ? "Düşük oranlı bankaya hacim kaydırmayı değerlendirin."
         : null,
-    relatedScreenHref: "/raporlar/banka-karsilastirma",
+    relatedScreenHref: "/panel/raporlar/banka-karsilastirma",
     relatedScreenLabel: "Banka Karşılaştırma Raporunu Aç",
   };
 }
@@ -89,7 +89,7 @@ async function handleTomorrowExpectedPayment(ctx: TenantContext): Promise<Handle
     dataSource: "Beklenen Ödemeler — yarın",
     risk: null,
     recommendedAction: null,
-    relatedScreenHref: "/odemeler/beklenen?range=tomorrow",
+    relatedScreenHref: "/panel/odemeler/beklenen?range=tomorrow",
     relatedScreenLabel: "Beklenen Ödemeleri Aç",
   };
 }
@@ -113,7 +113,7 @@ async function handleBestPosForInstallment(ctx: TenantContext, installmentCount:
     dataSource: `Tarifeler — ${installmentCount} taksit karşılaştırması`,
     risk: null,
     recommendedAction: best ? `Yüksek hacimli ${installmentCount} taksitli satışları ${best.posName} üzerinden yönlendirmeyi değerlendirin.` : null,
-    relatedScreenHref: "/tarifeler",
+    relatedScreenHref: "/panel/tarifeler",
     relatedScreenLabel: "Tarifeleri Aç",
   };
 }
@@ -128,7 +128,7 @@ async function handleContractRiskiestClauses(ctx: TenantContext): Promise<Handle
       dataSource: "Sözleşme Analizi",
       risk: null,
       recommendedAction: "Bir sözleşme yükleyip analiz ettirin.",
-      relatedScreenHref: "/sozlesmeler",
+      relatedScreenHref: "/panel/sozlesmeler",
       relatedScreenLabel: "Sözleşme Analizine Git",
     };
   }
@@ -147,7 +147,7 @@ async function handleContractRiskiestClauses(ctx: TenantContext): Promise<Handle
     dataSource: `Sözleşme Analizi — ${full.title}`,
     risk: topRisks.some((r) => r.severity === "HIGH") ? "Kritik olarak işaretlenmiş madde(ler) var." : null,
     recommendedAction: "Şerh/düzeltme önerileri için sözleşme analizini inceleyin.",
-    relatedScreenHref: `/sozlesmeler/${full.id}`,
+    relatedScreenHref: `/panel/sozlesmeler/${full.id}`,
     relatedScreenLabel: "Sözleşmeyi Görüntüle",
   };
 }
@@ -169,7 +169,7 @@ async function handleNegotiationAdvice(ctx: TenantContext): Promise<HandlerResul
     dataSource: "Yıllık Maliyet ve Pazarlık Raporu — son 12 ay",
     risk: report.negotiation.volumeCommitmentRisks.length > 0 ? "Ciro taahhüdü riski taşıyan sözleşme(ler) var." : null,
     recommendedAction: "Görüşme öncesi Yıllık Maliyet ve Pazarlık Raporu'nun tamamını inceleyin.",
-    relatedScreenHref: "/raporlar/yillik-pazarlik",
+    relatedScreenHref: "/panel/raporlar/yillik-pazarlik",
     relatedScreenLabel: "Pazarlık Raporunu Aç",
   };
 }
@@ -186,7 +186,7 @@ async function handleValorCostEstimate(ctx: TenantContext): Promise<HandlerResul
     risk: null,
     recommendedAction:
       banks.some((b) => b.avgValorDays > 1) ? "Valör süresi uzun olan bankalarla iyileştirme görüşmesi yapmayı değerlendirin." : null,
-    relatedScreenHref: "/raporlar/banka-karsilastirma",
+    relatedScreenHref: "/panel/raporlar/banka-karsilastirma",
     relatedScreenLabel: "Banka Karşılaştırma Raporunu Aç",
   };
 }
@@ -196,7 +196,7 @@ const UNKNOWN_RESULT: HandlerResult = {
   dataSource: "—",
   risk: null,
   recommendedAction: null,
-  relatedScreenHref: "/raporlar",
+  relatedScreenHref: "/panel/raporlar",
   relatedScreenLabel: "Raporlara Git",
 };
 

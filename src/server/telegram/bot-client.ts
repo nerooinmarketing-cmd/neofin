@@ -2,10 +2,24 @@ export interface InlineKeyboardButton {
   text: string;
   callback_data?: string;
   url?: string;
+  web_app?: { url: string };
 }
 
 export interface InlineKeyboardMarkup {
   inline_keyboard: InlineKeyboardButton[][];
+}
+
+export interface KeyboardButton {
+  text: string;
+  /** Mini App açan buton (bkz. "📄 POS Bilgi Formu") — tıklanınca metin mesajı gönderilmez. */
+  web_app?: { url: string };
+}
+
+/** Sohbetin altında kalıcı olarak görünen 4 sabit menü butonu (bkz. `getMainMenuKeyboard`). */
+export interface ReplyKeyboardMarkup {
+  keyboard: KeyboardButton[][];
+  resize_keyboard: true;
+  is_persistent: true;
 }
 
 const TELEGRAM_API_BASE = "https://api.telegram.org";
@@ -55,7 +69,10 @@ export const telegramBotClient = {
   sendMessage(
     chatId: number | string,
     text: string,
-    opts?: { replyMarkup?: InlineKeyboardMarkup; parseMode?: "HTML" | "MarkdownV2" },
+    opts?: {
+      replyMarkup?: InlineKeyboardMarkup | ReplyKeyboardMarkup;
+      parseMode?: "HTML" | "MarkdownV2";
+    },
   ) {
     return callTelegramApi<SentMessage>("sendMessage", {
       chat_id: chatId,
@@ -83,6 +100,36 @@ export const telegramBotClient = {
       message_id: messageId,
       reply_markup: replyMarkup,
     });
+  },
+
+  /** Rapor PDF'leri gibi ikili dosyaları gönderir (bkz. `src/server/reports/pdf.ts`). */
+  async sendDocument(
+    chatId: number | string,
+    document: { filename: string; buffer: Buffer; caption?: string },
+  ): Promise<SentMessage | null> {
+    const token = getBotToken();
+    if (!token) {
+      console.warn(
+        `[telegram] TELEGRAM_BOT_TOKEN tanımlı değil — sendDocument çağrısı gönderilmedi: ${document.filename}`,
+      );
+      return null;
+    }
+
+    const form = new FormData();
+    form.set("chat_id", String(chatId));
+    if (document.caption) form.set("caption", document.caption);
+    form.set("document", new Blob([new Uint8Array(document.buffer)], { type: "application/pdf" }), document.filename);
+
+    const response = await fetch(`${TELEGRAM_API_BASE}/bot${token}/sendDocument`, {
+      method: "POST",
+      body: form,
+    });
+
+    const body = (await response.json()) as { ok: boolean; result?: SentMessage; description?: string };
+    if (!body.ok) {
+      throw new Error(`Telegram API hatası (sendDocument): ${body.description ?? "bilinmiyor"}`);
+    }
+    return body.result ?? null;
   },
 
   /** Ops aracı: production webhook URL'sini Telegram'a bir kere kaydetmek için. */

@@ -11,3 +11,10 @@ export class TariffOverlapError extends Error {
     this.name = "TariffOverlapError";
   }
 }
+
+export class DuplicatePhoneError extends Error {
+  constructor() {
+    super("Bu telefon numarası başka bir kullanıcı tarafından kullanılıyor.");
+    this.name = "DuplicatePhoneError";
+  }
+}

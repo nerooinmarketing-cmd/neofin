@@ -107,7 +107,7 @@ export function OnboardingWizard({
               onCompleted={() => {
                 // Sert yönlendirme: client router cache'in kurulum-öncesi
                 // yönlendirmeyi tekrar kullanmasını önler.
-                window.location.assign("/");
+                window.location.assign("/panel");
               }}
             />
           ) : null}

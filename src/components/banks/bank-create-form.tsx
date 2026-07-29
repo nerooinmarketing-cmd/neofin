@@ -39,7 +39,7 @@ export function BankCreateForm() {
       setSubmitError("Banka kaydedilemedi. Lütfen alanları kontrol edin.");
       return;
     }
-    router.push("/bankalar");
+    router.push("/panel/bankalar");
     router.refresh();
   }
 

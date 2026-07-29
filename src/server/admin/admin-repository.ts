@@ -1,5 +1,8 @@
 import { prisma } from "@/lib/prisma";
+import { Prisma } from "@/generated/prisma/client";
 import type { CompanyStatus, CompanyUserRole, PackageTier } from "@/generated/prisma/enums";
+import { DuplicatePhoneError } from "@/server/errors";
+import { normalizePhone } from "@/lib/phone";
 
 /**
  * Yönetici paneli (Aşama 15) veri katmanı — kasıtlı olarak `TenantContext`
@@ -130,10 +133,23 @@ export const adminRepository = {
     return prisma.company.update({ where: { id: companyId }, data: { supportStatus } });
   },
 
-  createCompanyUser(companyId: string, input: { name: string; role: CompanyUserRole; email?: string; phone?: string }) {
-    return prisma.companyUser.create({
-      data: { companyId, name: input.name, role: input.role, email: input.email, phone: input.phone },
-    });
+  async createCompanyUser(companyId: string, input: { name: string; role: CompanyUserRole; email?: string; phone?: string }) {
+    try {
+      return await prisma.companyUser.create({
+        data: {
+          companyId,
+          name: input.name,
+          role: input.role,
+          email: input.email,
+          phone: input.phone ? normalizePhone(input.phone) : undefined,
+        },
+      });
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+        throw new DuplicatePhoneError();
+      }
+      throw error;
+    }
   },
 
   deactivateCompanyUser(companyUserId: string) {

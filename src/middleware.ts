@@ -14,6 +14,18 @@ import { ADMIN_SESSION_COOKIE_NAME } from "@/server/admin/cookie";
  * "route ve yetki olarak ayrı").
  */
 export function middleware(request: NextRequest) {
+  if (request.nextUrl.pathname === "/") {
+    // Ana domain artık genel (herkese açık) tanıtım sayfası — oturum
+    // gerektirmez. Panel `/panel`'e taşındı.
+    return NextResponse.next();
+  }
+
+  if (request.nextUrl.pathname.startsWith("/telegram-app")) {
+    // Telegram Mini App'in WebView'ı bizim oturum cookie'mizi taşımaz —
+    // kimlik doğrulaması `initData` iledir (bkz. `verify-init-data.ts`).
+    return NextResponse.next();
+  }
+
   if (request.nextUrl.pathname.startsWith("/admin")) {
     if (request.nextUrl.pathname === "/admin/login") {
       return NextResponse.next();

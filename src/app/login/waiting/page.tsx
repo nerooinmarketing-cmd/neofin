@@ -77,8 +77,8 @@ function LoginWaitingContent() {
               Telegram&apos;da onay bekleniyor
             </h1>
             <p className="text-sm text-muted-foreground">
-              Telegram botunda &quot;Onayla&quot; butonuna basın. Bu istek 5
-              dakika içinde geçerliliğini yitirir.
+              Telegram&apos;a bir onay mesajı gönderdik. Mesajdaki &quot;Onayla&quot;
+              butonuna basın. Bu istek 5 dakika içinde geçerliliğini yitirir.
             </p>
             <div className="mx-auto size-8 animate-spin rounded-full border-2 border-primary border-t-transparent" />
           </>

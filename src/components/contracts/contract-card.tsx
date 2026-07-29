@@ -41,7 +41,7 @@ export function ContractCard({ id, title, bankName, posName, status, pageCount, 
       </CardContent>
       <CardFooter className="bg-transparent">
         <Button size="sm" className="w-full" asChild>
-          <Link href={`/sozlesmeler/${id}`}>Analizi Görüntüle</Link>
+          <Link href={`/panel/sozlesmeler/${id}`}>Analizi Görüntüle</Link>
         </Button>
       </CardFooter>
     </Card>

@@ -153,7 +153,7 @@ export function ActualPaymentForm({
           </Button>
           {result ? (
             <Button asChild size="lg" variant="outline">
-              <Link href="/odemeler/beklenen">Beklenen Ödemelere Dön</Link>
+              <Link href="/panel/odemeler/beklenen">Beklenen Ödemelere Dön</Link>
             </Button>
           ) : null}
         </div>

@@ -1,4 +1,4 @@
-import type { CompanyStatus, PackageTier, SupportStatus } from "@/generated/prisma/enums";
+import type { CompanyStatus, PackageTier, QuoteRequestStatus, SupportStatus } from "@/generated/prisma/enums";
 import type { StatusTone } from "@/components/shared/status-badge";
 
 export const PACKAGE_TIER_LABELS: Record<PackageTier, string> = {
@@ -26,5 +26,16 @@ export function supportStatusLabel(status: SupportStatus): { label: string; tone
       return { label: "Destek talebi açık", tone: "warning" };
     case "RESOLVED":
       return { label: "Destek talebi çözüldü", tone: "success" };
+  }
+}
+
+export function quoteRequestStatusLabel(status: QuoteRequestStatus): { label: string; tone: StatusTone } {
+  switch (status) {
+    case "NEW":
+      return { label: "Yeni", tone: "warning" };
+    case "CONTACTED":
+      return { label: "Görüşüldü", tone: "info" };
+    case "CLOSED":
+      return { label: "Kapandı", tone: "success" };
   }
 }

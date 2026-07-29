@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
 import { prisma } from "@/lib/prisma";
 import { telegramBotClient } from "@/server/telegram/bot-client";
+import { getMainMenuKeyboard } from "@/server/telegram/main-menu";
 
 const PAIRING_TTL_MS = 15 * 60 * 1000; // 15 dakika
 
@@ -67,7 +68,9 @@ export async function tryConsumePairingCode(params: {
   await telegramBotClient.sendMessage(
     params.chatId,
     `✅ Telegram hesabınız "${companyUser.company.shortName ?? companyUser.company.name ?? "firmanız"}" için ` +
-      `${companyUser.name} kullanıcısına bağlandı. Artık giriş yapabilir ve bildirim alabilirsiniz.`,
+      `${companyUser.name} kullanıcısına bağlandı. Artık giriş yapabilir ve bildirim alabilirsiniz.\n\n` +
+      "Aşağıdaki menüden hızlıca işlem yapabilirsiniz.",
+    { replyMarkup: getMainMenuKeyboard() },
   );
 
   return true;

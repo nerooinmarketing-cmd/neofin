@@ -22,7 +22,7 @@ export function Sidebar() {
         {primaryNavItems.map((item) => {
           const isActive =
             pathname === item.href ||
-            (item.href !== "/" && pathname.startsWith(item.href));
+            (item.href !== "/panel" && pathname.startsWith(item.href));
           const Icon = item.icon;
           return (
             <Link

@@ -35,7 +35,7 @@ export function DifferenceFilterBar({ banks, posDevices, branches }: DifferenceF
     const params = new URLSearchParams(searchParams.toString());
     if (value && value !== "all") params.set(key, value);
     else params.delete(key);
-    router.push(`/fark-analizi?${params.toString()}`);
+    router.push(`/panel/fark-analizi?${params.toString()}`);
   }
 
   return (

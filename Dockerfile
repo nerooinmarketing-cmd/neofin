@@ -14,7 +14,10 @@ RUN npm run build
 FROM node:24-slim AS runner
 WORKDIR /app
 ENV NODE_ENV=production
-RUN apt-get update && apt-get install -y --no-install-recommends openssl && rm -rf /var/lib/apt/lists/*
+# chromium: Telegram "Raporlar" PDF üretimi için (bkz. src/server/reports/pdf.ts,
+# puppeteer-core + apt'ten kurulan bu ikili — bundled Chromium indirmez).
+RUN apt-get update && apt-get install -y --no-install-recommends openssl chromium && rm -rf /var/lib/apt/lists/*
+ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
 RUN groupadd --system --gid 1001 nodejs && useradd --system --uid 1001 --gid nodejs nextjs
 
 COPY --from=builder /app/public ./public

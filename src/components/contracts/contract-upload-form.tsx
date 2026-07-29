@@ -55,7 +55,7 @@ export function ContractUploadForm({ banks, posDevices }: ContractUploadFormProp
       setSubmitError(body.error ?? "Sözleşme yüklenemedi.");
       return;
     }
-    router.push(`/sozlesmeler/${body.id}`);
+    router.push(`/panel/sozlesmeler/${body.id}`);
   }
 
   return (

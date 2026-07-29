@@ -12,6 +12,9 @@ export function AdminShell({ adminName, children }: { adminName: string; childre
             <Link href="/admin/musteriler" className="hover:underline">
               Müşteriler
             </Link>
+            <Link href="/admin/teklifler" className="hover:underline">
+              Teklif Talepleri
+            </Link>
             <Link href="/admin/audit-log" className="hover:underline">
               Audit Log
             </Link>

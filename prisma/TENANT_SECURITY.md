@@ -101,6 +101,14 @@ tamamlanana kadar bu kayıtlar hiçbir firmaya ait sayılmaz ve hiçbir
 repository sorgusunda `companyId: null` olan satırlar başka bir firmanın
 verisiyle karışacak şekilde döndürülmez.
 
+`QuoteRequest` (halka açık tanıtım sayfasındaki "Teklif Alın" formu) aynı
+kategoridedir ama daha da öncesindedir — ziyaretçi henüz bir `Company`
+kaydına bile sahip değildir, bu yüzden `companyId` sütunu **hiç yoktur**.
+`src/server/repositories/quote-request-repository.ts` bu yüzden
+`TenantContext` almaz; `adminRepository` gibi bu kuralın bilinçli bir
+istisnasıdır, erişimi `requireSystemAdminContext()` korur (okuma/durum
+güncelleme tarafında).
+
 ## 8. Yeni bir repository yazarken kontrol listesi
 
 - [ ] İlk parametre `ctx: TenantContext`

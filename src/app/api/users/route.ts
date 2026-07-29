@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
 import { getTenantContextFromRequest } from "@/server/auth/api-tenant-context";
 import { userRepository, canManageUsers } from "@/server/repositories/user-repository";
+import { DuplicatePhoneError } from "@/server/errors";
 
 const createUserSchema = z.object({
   name: z.string().min(2, "Ad gerekli"),
@@ -32,11 +33,18 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Yalnızca sahip başka bir sahip ekleyebilir" }, { status: 403 });
   }
 
-  const user = await userRepository.create(ctx, {
-    name: parsed.data.name,
-    role: parsed.data.role,
-    email: parsed.data.email || undefined,
-    phone: parsed.data.phone || undefined,
-  });
-  return NextResponse.json({ ok: true, companyUserId: user.id });
+  try {
+    const user = await userRepository.create(ctx, {
+      name: parsed.data.name,
+      role: parsed.data.role,
+      email: parsed.data.email || undefined,
+      phone: parsed.data.phone || undefined,
+    });
+    return NextResponse.json({ ok: true, companyUserId: user.id });
+  } catch (error) {
+    if (error instanceof DuplicatePhoneError) {
+      return NextResponse.json({ error: error.message }, { status: 409 });
+    }
+    throw error;
+  }
 }

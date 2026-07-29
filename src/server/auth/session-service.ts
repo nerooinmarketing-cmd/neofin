@@ -115,6 +115,33 @@ export async function createDevSession(params: {
   return { rawToken, session };
 }
 
+const RENDER_SESSION_TTL_MS = 3 * 60 * 1000; // 3 dakika — yalnızca PDF render süresince yaşar, sonra revoke edilir
+
+/**
+ * Telegram'dan "Raporlar" butonuyla istenen bir PDF'i headless tarayıcıda
+ * render edebilmek için: gerçek web rapor sayfasını ilgili kullanıcının
+ * oturumuymuş gibi açan, çok kısa ömürlü, tek kullanımlık dahili oturum
+ * (bkz. `src/server/reports/pdf.ts`). Render bitince `revokeSessionByToken`
+ * ile hemen iptal edilir.
+ */
+export async function createReportRenderSession(
+  companyUserId: string,
+): Promise<{ rawToken: string; session: { id: string } }> {
+  const companyUser = await prisma.companyUser.findUniqueOrThrow({ where: { id: companyUserId } });
+
+  const rawToken = crypto.randomBytes(32).toString("base64url");
+  const session = await prisma.session.create({
+    data: {
+      companyId: companyUser.companyId,
+      companyUserId: companyUser.id,
+      tokenHash: hashToken(rawToken),
+      expiresAt: new Date(Date.now() + RENDER_SESSION_TTL_MS),
+    },
+  });
+
+  return { rawToken, session };
+}
+
 /** Cookie'den okunan ham token'ı doğrular ve tenant bağlamını döndürür. */
 export async function resolveTenantContextFromToken(
   rawToken: string | undefined,
