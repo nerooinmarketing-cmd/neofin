@@ -194,8 +194,15 @@ kendi Chromium'unu indirmesinden farklıdır ve Next'in "standalone" çıktısı
 uyumludur.
 
 **Ek özellik — Telegram Mini App: POS Bilgi Formu:** "📄 POS Bilgi Formu"
-butonu düz metin değil bir `web_app` butonudur — tıklanınca
-`/telegram-app/pos-bilgi-formu` bir Telegram WebView'ında açılır (bizim
+düz metin bir buton olarak kalır — **`ReplyKeyboardMarkup`ın (kalıcı alt
+menü) `web_app` butonlarında Telegram `initData`'yı kasıtlı olarak hiç
+göndermez** (yalnızca `sendData` ile tek yönlü, kimliksiz veri döner; bkz.
+https://core.telegram.org/bots/webapps). initData/kimlik doğrulama
+gerektiren bir Mini App için tek yol **inline** bir klavye butonudur. Bu
+yüzden butona basılınca (düz metin mesajı olarak webhook'a düşer) bot,
+gerçek Mini App'i `web_app` ile açan tek satır inline butonlu ayrı bir
+mesajla cevap verir (`sendPosInfoFormLauncher`, `main-menu.ts`) — asıl
+`/telegram-app/pos-bilgi-formu` sayfası bu inline butondan açılır (bizim
 oturum cookie'mizi taşımaz). Kimlik doğrulama Telegram'ın `initData`'sı
 iledir: bot token ile HMAC imzası doğrulanır (`src/server/telegram/verify-
 init-data.ts`, Telegram'ın resmî algoritması) ve doğrulanan Telegram

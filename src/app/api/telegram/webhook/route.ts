@@ -15,7 +15,7 @@ import {
   handleConfirm as handleYeniPosConfirm,
 } from "@/server/telegram/yeni-pos-conversation";
 import { sendReportsMenu, handleReportRequest } from "@/server/telegram/reports-menu";
-import { MAIN_MENU_LABELS, sendMainMenu } from "@/server/telegram/main-menu";
+import { MAIN_MENU_LABELS, sendMainMenu, sendPosInfoFormLauncher } from "@/server/telegram/main-menu";
 import { tryConsumePairingCode } from "@/server/telegram/pairing-service";
 import { telegramBotClient } from "@/server/telegram/bot-client";
 
@@ -84,6 +84,11 @@ export async function POST(request: NextRequest) {
       // menüyü (ve içindeki "web_app" butonunu) istenildiği zaman
       // yeniden gösterir, örn. o tarihten önce eşleşmiş hesaplar için.
       await sendMainMenu({
+        telegramUserId: BigInt(update.message.from.id),
+        chatId: update.message.chat.id,
+      });
+    } else if (update.message?.text === MAIN_MENU_LABELS.posInfoForm && update.message.from) {
+      await sendPosInfoFormLauncher({
         telegramUserId: BigInt(update.message.from.id),
         chatId: update.message.chat.id,
       });
