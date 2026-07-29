@@ -18,7 +18,13 @@ ENV NODE_ENV=production
 # puppeteer-core + apt'ten kurulan bu ikili — bundled Chromium indirmez).
 RUN apt-get update && apt-get install -y --no-install-recommends openssl chromium && rm -rf /var/lib/apt/lists/*
 ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
-RUN groupadd --system --gid 1001 nodejs && useradd --system --uid 1001 --gid nodejs nextjs
+RUN groupadd --system --gid 1001 nodejs && useradd --system --uid 1001 --gid nodejs --home-dir /home/nextjs --create-home nextjs
+# node:24-slim'in ENV HOME=/root'u USER nextjs'e geçince de kalıcı olur (Docker
+# HOME'u USER değişince otomatik güncellemez) — nextjs kullanıcısının /root'a
+# yazma izni yok, bu da Chromium'un crashpad veritabanını kuramamasına ve
+# hiç açılamamasına yol açıyordu ("chrome_crashpad_handler: --database is
+# required"). Gerçek ev dizinine işaret etmek kalıcı çözüm.
+ENV HOME=/home/nextjs
 
 COPY --from=builder /app/public ./public
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
