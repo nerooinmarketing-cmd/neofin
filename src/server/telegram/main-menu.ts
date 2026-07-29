@@ -17,10 +17,19 @@ export const MAIN_MENU_LABELS = {
 
 export function getMainMenuKeyboard(): ReplyKeyboardMarkup {
   const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
+  // Telegram'ın mobil istemcileri web_app URL'lerini agresif biçimde
+  // önbellekte tutuyor — yeni bir deploy sonrası eski sayfayı göstermeye
+  // devam edebiliyor. Her menü gönderiminde değişen bir sorgu parametresi
+  // (`v`), Telegram'ın bunu her zaman farklı/taze bir URL olarak görmesini
+  // sağlar.
+  const cacheBuster = Date.now();
   return {
     keyboard: [
       [
-        { text: MAIN_MENU_LABELS.posInfoForm, web_app: { url: `${appUrl}/telegram-app/pos-bilgi-formu` } },
+        {
+          text: MAIN_MENU_LABELS.posInfoForm,
+          web_app: { url: `${appUrl}/telegram-app/pos-bilgi-formu?v=${cacheBuster}` },
+        },
         { text: MAIN_MENU_LABELS.newPos },
       ],
       [{ text: MAIN_MENU_LABELS.reports }, { text: MAIN_MENU_LABELS.gunSonu }],
