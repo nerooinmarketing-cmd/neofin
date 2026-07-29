@@ -25,6 +25,11 @@ export function TopBar({
   greeting,
   notificationCount = 0,
 }: TopBarProps) {
+  async function logout() {
+    await fetch("/api/auth/logout", { method: "POST" });
+    window.location.assign("/login");
+  }
+
   return (
     <header className="sticky top-0 z-20 flex h-16 items-center justify-between gap-3 border-b border-border bg-background/95 px-4 backdrop-blur supports-[backdrop-filter]:bg-background/80 lg:px-8 print:hidden">
       <div className="min-w-0">
@@ -106,10 +111,14 @@ export function TopBar({
             </button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
-            <DropdownMenuItem>Profil</DropdownMenuItem>
-            <DropdownMenuItem>Ayarlar</DropdownMenuItem>
+            <DropdownMenuItem asChild>
+              <Link href="/ayarlar">Profil</Link>
+            </DropdownMenuItem>
+            <DropdownMenuItem asChild>
+              <Link href="/ayarlar">Ayarlar</Link>
+            </DropdownMenuItem>
             <DropdownMenuSeparator />
-            <DropdownMenuItem>Çıkış yap</DropdownMenuItem>
+            <DropdownMenuItem onClick={logout}>Çıkış yap</DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
