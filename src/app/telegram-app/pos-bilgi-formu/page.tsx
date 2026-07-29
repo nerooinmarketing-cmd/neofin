@@ -6,6 +6,7 @@ import { PosBilgiFormMiniApp } from "@/components/telegram-app/pos-bilgi-form-mi
 
 export default function PosBilgiFormuPage() {
   const [initData, setInitData] = useState<string | null>(null);
+  const [diagnostics, setDiagnostics] = useState<string>("");
   const resolved = useRef(false);
 
   useEffect(() => {
@@ -29,6 +30,11 @@ export default function PosBilgiFormuPage() {
     const webApp = window.Telegram?.WebApp;
     webApp?.ready();
     webApp?.expand();
+    setDiagnostics(
+      `Telegram: ${window.Telegram ? "var" : "yok"} · WebApp: ${webApp ? "var" : "yok"} · ` +
+        `platform: ${webApp?.platform ?? "-"} · version: ${webApp?.version ?? "-"} · ` +
+        `initData uzunluğu: ${webApp?.initData?.length ?? 0}`,
+    );
     setInitData(webApp?.initData ?? "");
   }
 
@@ -40,8 +46,9 @@ export default function PosBilgiFormuPage() {
           Yükleniyor...
         </div>
       ) : initData === "" ? (
-        <div className="flex min-h-screen items-center justify-center p-6 text-center text-sm text-muted-foreground">
-          Bu sayfa yalnızca Telegram uygulaması içinden açılabilir.
+        <div className="flex min-h-screen flex-col items-center justify-center gap-2 p-6 text-center text-sm text-muted-foreground">
+          <p>Bu sayfa yalnızca Telegram uygulaması içinden açılabilir.</p>
+          {diagnostics ? <p className="text-xs opacity-70">{diagnostics}</p> : null}
         </div>
       ) : (
         <PosBilgiFormMiniApp initData={initData} />
