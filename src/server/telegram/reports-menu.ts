@@ -79,6 +79,20 @@ export async function sendReportsMenu(params: { telegramUserId: bigint; chatId: 
   await telegramBotClient.sendMessage(params.chatId, lines.join("\n"), { replyMarkup: keyboard });
 }
 
+/**
+ * Telegram'ın "answerCallbackQuery" ile onaylanması gereken bir süresi
+ * vardır (~birkaç saniye); süre geçmişse veya id zaten geçersizse API
+ * hata döner. Bu yalnızca butonun üstündeki "yükleniyor" göstergesini
+ * kapatır — asıl işin (PDF üretimi/gönderimi) bu yüzden iptal olmamalı.
+ */
+async function ackCallback(callbackQueryId: string, opts?: { text?: string; showAlert?: boolean }) {
+  try {
+    await telegramBotClient.answerCallbackQuery(callbackQueryId, opts);
+  } catch (error) {
+    console.warn("[telegram reports] answerCallbackQuery başarısız (yok sayıldı):", error);
+  }
+}
+
 export async function handleReportRequest(params: {
   telegramUserId: bigint;
   chatId: number;
@@ -87,20 +101,17 @@ export async function handleReportRequest(params: {
 }) {
   const companyUserId = await resolveCompanyUserId(params.telegramUserId);
   if (!companyUserId) {
-    await telegramBotClient.answerCallbackQuery(params.callbackQueryId, {
-      text: "Hesabınız bir firmaya bağlı değil.",
-      showAlert: true,
-    });
+    await ackCallback(params.callbackQueryId, { text: "Hesabınız bir firmaya bağlı değil.", showAlert: true });
     return;
   }
 
   const report = REPORTS.find((r) => r.code === params.reportCode);
   if (!report) {
-    await telegramBotClient.answerCallbackQuery(params.callbackQueryId, { text: "Rapor bulunamadı.", showAlert: true });
+    await ackCallback(params.callbackQueryId, { text: "Rapor bulunamadı.", showAlert: true });
     return;
   }
 
-  await telegramBotClient.answerCallbackQuery(params.callbackQueryId, { text: "Hazırlanıyor..." });
+  await ackCallback(params.callbackQueryId, { text: "Hazırlanıyor..." });
   await telegramBotClient.sendMessage(
     params.chatId,
     `⏳ "${report.title}" PDF olarak hazırlanıyor, birkaç saniye sürebilir...`,
