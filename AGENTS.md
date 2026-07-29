@@ -110,6 +110,22 @@ iki giriş kanalı (web formu ve Telegram sohbeti) aynı sonuca çıkar. Sohbet
 durumu `TelegramConversationState` modelinde tutulur; bkz.
 `src/server/telegram/gun-sonu-conversation.ts`.
 
+**Ek özellik — `/kullanicilar` ve `/ayarlar`:** iskelet aşamasından beri
+menüde duran ama 21 aşamalık planın hiçbir stage'ine dahil edilmemiş iki
+sayfa, production deployment sonrası kullanıcı isteğiyle dolduruldu.
+`/kullanicilar` firma içi kullanıcı listesi/davet/rol değiştirme/pasife
+alma ve Telegram eşleştirme kodu üretimini `src/server/repositories/
+user-repository.ts` (tenant-scoped, `TENANT_SECURITY.md` desenine uyar)
+üzerinden sağlar — `canManageUsers()` ile OWNER/MANAGER dışı roller
+(ACCOUNTANT, "kritik ayarları değiştiremez") salt-okunur görür, kimse
+kendi rolünü değiştiremez/kendini pasife alamaz. `/ayarlar` firma profili
+düzenleme (`company-settings-repository.ts`, onboarding'in
+`companyInfoSchema`'sını yeniden kullanır) + "Hesabım" (kendi ad/e-posta/
+telefon) + `/bildirimler`'e bağlantı içerir. Bu iki sayfa gerçek
+`userName`/`companyName` değerlerini `AppShell`'e prop olarak geçiyor —
+`AppShell`'in varsayılan "Şenol Bey"/"Örnek Ticaret A.Ş." değerleri hâlâ
+diğer ~27 sayfada kullanılıyor (bilinen, henüz giderilmemiş bir eksiklik).
+
 **Hesaplama motoru kuralı:** `src/lib/tariff-engine/` UI'dan/Prisma'dan
 tamamen bağımsız saf fonksiyonlardır — Prisma tipi, `@/lib/prisma`, React
 veya Next.js import ETMEZ. DB↔motor eşlemesi sınırda
