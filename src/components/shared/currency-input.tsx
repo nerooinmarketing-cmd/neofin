@@ -1,6 +1,6 @@
 "use client";
 
-import { useId, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
@@ -44,12 +44,12 @@ export function CurrencyInput({
   const generatedId = useId();
   const inputId = id ?? generatedId;
   const [text, setText] = useState(value !== undefined ? formatTRNumber(value) : "");
-  const [lastValue, setLastValue] = useState(value);
+  const isFocusedRef = useRef(false);
 
-  if (value !== lastValue) {
-    setLastValue(value);
+  useEffect(() => {
+    if (isFocusedRef.current) return;
     setText(value !== undefined ? formatTRNumber(value) : "");
-  }
+  }, [value]);
 
   return (
     <div className="space-y-1.5">
@@ -66,12 +66,16 @@ export function CurrencyInput({
           disabled={disabled}
           placeholder={placeholder}
           value={text}
+          onFocus={() => {
+            isFocusedRef.current = true;
+          }}
           onChange={(e) => {
             const raw = e.target.value;
             setText(raw);
             onValueChange(parseTRNumber(raw));
           }}
           onBlur={() => {
+            isFocusedRef.current = false;
             const parsed = parseTRNumber(text);
             setText(parsed !== undefined ? formatTRNumber(parsed) : "");
             onValueChange(parsed);
