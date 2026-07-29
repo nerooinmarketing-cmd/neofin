@@ -32,7 +32,16 @@ export async function renderTenantReportToPdf(params: {
   const browser = await puppeteer.launch({
     executablePath,
     headless: true,
-    args: ["--no-sandbox", "--disable-setuid-sandbox"],
+    args: [
+      "--no-sandbox",
+      "--disable-setuid-sandbox",
+      "--disable-dev-shm-usage",
+      "--disable-gpu",
+      // Konteynerde crashpad_handler için yazılabilir bir "--database" dizini
+      // yok; olmadan başlatınca Chromium hiç açılmıyor ("chrome_crashpad_handler:
+      // --database is required"). Crash reporter'ı tamamen kapatmak bunu çözer.
+      "--disable-crash-reporter",
+    ],
   });
 
   try {

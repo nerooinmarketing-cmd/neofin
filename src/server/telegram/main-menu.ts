@@ -1,4 +1,5 @@
-import type { ReplyKeyboardMarkup } from "./bot-client";
+import { prisma } from "@/lib/prisma";
+import { telegramBotClient, type ReplyKeyboardMarkup } from "./bot-client";
 
 /**
  * Telegram botunun 4 sabit menü butonu — kullanıcı isteği üzerine 21
@@ -27,4 +28,24 @@ export function getMainMenuKeyboard(): ReplyKeyboardMarkup {
     resize_keyboard: true,
     is_persistent: true,
   };
+}
+
+/**
+ * `/menu` komutu ve bare `/start` için: menü yalnızca eşleştirme anında
+ * (`pairing-service.ts`) bir kere gönderildiğinden, o tarihten önce
+ * eşleşmiş hesaplar hiç görmemiş olabilir — bu, menüyü istenildiği zaman
+ * yeniden göndermenin tek yolu.
+ */
+export async function sendMainMenu(params: { telegramUserId: bigint; chatId: number }) {
+  const account = await prisma.telegramAccount.findUnique({ where: { telegramUserId: params.telegramUserId } });
+
+  if (!account?.companyUserId) {
+    await telegramBotClient.sendMessage(
+      params.chatId,
+      "Bu hesap henüz bir firma ile eşleştirilmemiş. Panelden veya yöneticinizden bir eşleştirme kodu isteyin.",
+    );
+    return;
+  }
+
+  await telegramBotClient.sendMessage(params.chatId, "Ana menü:", { replyMarkup: getMainMenuKeyboard() });
 }
